@@ -7,8 +7,8 @@ Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logr
 ## Stack
 Next.js 16.2.9 full-stack (App Router, React Compiler activo) · React 19.2.4 · TypeScript `strict` ·
 Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI, iconos Phosphor) + Lucide en componentes propios ·
-Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 · PostgreSQL (local).
-No instalados aún: Motion, Sonner, zod, framework de tests.
+Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · PostgreSQL (local).
+No instalados aún: Motion, Sonner, framework de tests.
 
 > Excepción al stack base global: NO hay `frontend/` + `backend/` Laravel. Todo vive en Next.js (decisión del usuario, 2026-10-23).
 
@@ -28,18 +28,28 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 
 ## Estructura
 ```
-src/app/layout.tsx          layout raíz (fuentes, metadata aún por defecto)
-src/app/page.tsx            dashboard "/" con datos hardcodeados
+src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
+src/app/page.tsx            dashboard "/" protegido con requireUser(); stats/XP/tareas aún hardcodeados
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
-src/app/auth/login.tsx      VACÍO (0 bytes) — no es ruta; debe ser auth/login/page.tsx
-src/app/auth/register.tsx   VACÍO (0 bytes) — idem
+src/app/auth/layout.tsx     layout de login/registro (panel de marca a la izquierda en lg)
+src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl, muestra ?registered=1)
+src/app/auth/register/page.tsx  /auth/register
+src/app/auth/actions.ts     Server Action registerUser (zod + bcrypt cost 12, P2002 → email duplicado)
+src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
+src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
+src/components/auth/        LoginForm, RegisterForm, AuthField, PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  tipo Difficulty + DifficultyStyles (color, badge, icono Lucide)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
-src/components/layout/      DashboardLayout, AppSidebar (menú sin navegación), AppNavbar
+src/components/layout/      DashboardLayout (prop userName), AppSidebar (menú sin navegación), AppNavbar (saludo con nombre real), SignOutButton
 src/components/dashboard/   StatsCard, xpHeroCard (XP/nivel fijos)
 src/components/task/        TaskList (array estático), TaskCard
 src/lib/utils.ts            cn()
 src/lib/prisma.ts           PrismaClient singleton con adapter pg
+src/lib/auth.ts             authOptions de NextAuth (Credentials, JWT, session.user.id)
+src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /auth/login
+src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
+src/lib/validations/auth.ts loginSchema / registerSchema (zod), compartidos cliente/servidor
+src/types/next-auth.d.ts    agrega id a Session.user
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
 prisma/migrations/          20261026154201_init (User, Task, enums)
@@ -55,20 +65,29 @@ prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 | Componentes shadcn | `src/components/ui/` (config en `components.json`) |
 | Estilos por dificultad | `src/app/constants/taskDifficulty.tsx` |
 | Lógica de XP / nivel | `src/components/dashboard/xpHeroCard.tsx` (solo visual) |
-| Autenticación | — (pendiente, NextAuth v4) |
+| Autenticación | `src/lib/auth.ts`, `src/lib/session.ts`, `src/proxy.ts`, `src/app/auth/` |
+| Usuario actual en servidor | `const user = await requireUser()` de `@/lib/session` |
 | Esquema de BD | `prisma/schema.prisma` |
 | Cliente de BD | `import { prisma } from "@/lib/prisma"` |
-| Server Actions / Route Handlers | — (no existen) |
+| Server Actions / Route Handlers | `src/app/auth/actions.ts`, `src/app/api/auth/[...nextauth]/route.ts` |
 
 ## Rutas
 | Ruta | Archivo | Estado |
 |---|---|---|
-| `/` | `src/app/page.tsx` | UI estática |
+| `/` | `src/app/page.tsx` | Protegida; UI con datos fijos salvo el nombre |
+| `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
+| `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
+| `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
 Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Historial.
 
 ## API / Server Actions
-Ninguna todavía.
+| Nombre | Archivo | Qué hace |
+|---|---|---|
+| `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, hashea y crea User. Devuelve `{ ok } | { ok:false, fieldErrors?, formError? }` |
+| NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (email normalizado a minúsculas), sesión JWT 30 días |
+
+Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista.
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
@@ -100,6 +119,9 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-23: Cliente Prisma con generator `prisma-client` en `src/generated/prisma` (no en node_modules). `prisma.config.ts` usa `process.env.DATABASE_URL` en vez de `env()` para que `prisma generate` funcione sin `.env`.
 - 2026-10-23: Sin tablas de adapter de NextAuth: se usará Credentials + estrategia JWT. Si luego se añade OAuth, agregar Account/Session/VerificationToken.
 - 2026-10-23: Enums de BD en inglés; mapeo a etiquetas en español en la UI.
+- 2026-10-26: Login vía `signIn("credentials", { redirect: false })` en cliente; registro vía Server Action y luego auto-login. Comparación bcrypt contra hash ficticio si el email no existe (mismo tiempo de respuesta).
+- 2026-10-26: Validación con zod compartida cliente/servidor (`src/lib/validations/`). Contraseña 8–72 caracteres (límite de bcrypt).
+- 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
 
 ## Pendientes / deuda técnica
 Prioridad 1 — entorno
@@ -111,7 +133,9 @@ Prioridad 1 — entorno
 - [x] Git: remoto `origin` = github.com/AldairGarciaM/TaskQuest. Trabajo en ramas; el usuario revisa y fusiona (no abrir/fusionar PRs ni hacer `git pull` sin su visto bueno).
 
 Prioridad 2 — funcionalidad
-- [ ] Auth (NextAuth v4): páginas `auth/login/page.tsx`, `auth/register/page.tsx`, protección de rutas.
+- [x] Auth (NextAuth v4): login, registro, logout, proxy y `requireUser()`.
+- [ ] Rate limiting en login/registro (ahora no hay límite de intentos).
+- [ ] Recuperar contraseña (requiere envío de correo).
 - [ ] CRUD de tareas con Server Actions + validación en servidor.
 - [ ] XP y nivel calculados en servidor al completar tareas.
 - [ ] Dashboard con datos reales + estados de carga/vacío/error.
@@ -120,7 +144,8 @@ Prioridad 2 — funcionalidad
 Prioridad 3 — UX
 - [ ] Sidebar responsive (usar `Sheet`), navegación con `<Link>`.
 - [ ] Tema oscuro coherente con tokens; una sola librería de iconos.
-- [ ] `aria-label` en botones de icono; metadata y `lang="es"`; quitar fuentes sin uso.
+- [x] `aria-label` en botones de icono del navbar; metadata y `lang="es"`.
+- [ ] Quitar fuentes sin uso en `layout.tsx`.
 - [ ] Motion (con `useReducedMotion`) y Sonner.
 
 Prioridad 4 — estabilidad
@@ -128,5 +153,6 @@ Prioridad 4 — estabilidad
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Rama `feat/auth`: login/registro/logout con NextAuth Credentials + JWT, proxy de rutas, dashboard protegido. Probado con curl contra `next start` (redirects, login correcto/incorrecto, sesión, callbackUrl externo ignorado).
 - 2026-10-26: Remoto GitHub configurado; Fase 1 subida en rama `chore/phase-1-setup`. Rama `feat/database`: `.env` local + migración `init` aplicada (tablas User, Task).
 - 2026-10-23: Fase 1 — build arreglado (TaskCard usa DifficultyStyles), pnpm único, Prisma 7 configurado (schema User/Task, config, cliente singleton), `.env.example`, scripts db:*.

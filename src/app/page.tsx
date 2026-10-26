@@ -10,10 +10,13 @@ import {
 
 import StatsCard from "@/components/dashboard/StatsCard";
 import TaskList from "@/components/task/TaskList";
+import { requireUser } from "@/lib/session";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await requireUser();
+
   return (
-    <DashboardLayout>
+    <DashboardLayout userName={user.name ?? "aventurero"}>
 
       <div className = "mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>

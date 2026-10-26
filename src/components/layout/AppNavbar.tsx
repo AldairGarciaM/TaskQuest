@@ -1,6 +1,14 @@
 import { Bell, Settings } from "lucide-react";
 
-export default function AppNavbar() {
+import SignOutButton from "./SignOutButton";
+
+interface AppNavbarProps {
+  userName: string;
+}
+
+export default function AppNavbar({ userName }: AppNavbarProps) {
+  const firstName = userName.split(" ")[0];
+
   return (
     <header
       className="
@@ -15,7 +23,7 @@ export default function AppNavbar() {
     >
       <div>
         <h2 className="text-2xl font-bold">
-          ¡Hola, Aldair! 👋
+          ¡Hola, {firstName}! 👋
         </h2>
 
         <p className="text-slate-400">
@@ -24,13 +32,15 @@ export default function AppNavbar() {
       </div>
 
       <div className="flex gap-3">
-        <button className="rounded-full bg-slate-800 p-3">
+        <button className="rounded-full bg-slate-800 p-3" aria-label="Notificaciones">
           <Bell size={18} />
         </button>
 
-        <button className="rounded-full bg-slate-800 p-3">
+        <button className="rounded-full bg-slate-800 p-3" aria-label="Configuración">
           <Settings size={18} />
         </button>
+
+        <SignOutButton />
       </div>
     </header>
   );

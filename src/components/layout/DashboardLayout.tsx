@@ -2,10 +2,12 @@ import AppNavbar from "./AppNavbar";
 import AppSidebar from "./AppSidebar";
 
 interface Props {
+  userName: string;
   children: React.ReactNode;
 }
 
 export default function DashboardLayout({
+  userName,
   children,
 }: Props) {
   return (
@@ -13,7 +15,7 @@ export default function DashboardLayout({
       <AppSidebar />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <AppNavbar />
+        <AppNavbar userName={userName} />
 
         <main className="flex-1 overflow-y-auto p-8">
           {children}
