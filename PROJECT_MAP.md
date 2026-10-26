@@ -1,5 +1,5 @@
 # PROJECT_MAP — TaskQuest
-_Última actualización: 2026-10-23_
+_Última actualización: 2026-10-26_
 
 ## Qué es
 Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logros, rachas). Proyecto de portafolio.
@@ -42,6 +42,7 @@ src/lib/utils.ts            cn()
 src/lib/prisma.ts           PrismaClient singleton con adapter pg
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
+prisma/migrations/          20261026154201_init (User, Task, enums)
 prisma/seed.ts              VACÍO
 prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 .env.example                variables requeridas (sin valores reales)
@@ -70,7 +71,8 @@ Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Histor
 Ninguna todavía.
 
 ## Base de datos
-Esquema definido, **sin migraciones aplicadas** (no existe `prisma/migrations/`).
+PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
+Migraciones aplicadas: `20261026154201_init`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), name, email (unique), passwordHash, xp (0), level (1) | Para NextAuth Credentials + JWT |
@@ -104,9 +106,9 @@ Prioridad 1 — entorno
 - [x] Build roto en `TaskCard.tsx` (import inexistente) y lógica de dificultad duplicada.
 - [x] Gestor único pnpm.
 - [x] `.env.example`, `prisma.config.ts`, esquema Prisma, `src/lib/prisma.ts`.
-- [ ] Crear `.env` local y ejecutar la primera migración (`pnpm db:migrate --name init`) — requiere autorización.
+- [x] `.env` local creado y primera migración `init` aplicada.
 - [ ] Mapeo Difficulty enum (EASY…) ↔ etiqueta UI (Fácil…) cuando se conecten datos reales.
-- [ ] Git: solo existe el commit inicial de create-next-app; todo el trabajo está sin commitear y no hay remoto.
+- [x] Git: remoto `origin` = github.com/AldairGarciaM/TaskQuest. Trabajo en ramas; el usuario revisa y fusiona (no abrir/fusionar PRs ni hacer `git pull` sin su visto bueno).
 
 Prioridad 2 — funcionalidad
 - [ ] Auth (NextAuth v4): páginas `auth/login/page.tsx`, `auth/register/page.tsx`, protección de rutas.
@@ -126,4 +128,5 @@ Prioridad 4 — estabilidad
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Remoto GitHub configurado; Fase 1 subida en rama `chore/phase-1-setup`. Rama `feat/database`: `.env` local + migración `init` aplicada (tablas User, Task).
 - 2026-10-23: Fase 1 — build arreglado (TaskCard usa DifficultyStyles), pnpm único, Prisma 7 configurado (schema User/Task, config, cliente singleton), `.env.example`, scripts db:*.
