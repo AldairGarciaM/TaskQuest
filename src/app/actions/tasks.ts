@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { dueDateFromInput } from "@/lib/dates";
+import { syncDailyMissions, unlockAchievements } from "@/lib/gamification/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { taskIdSchema, taskInputSchema, type TaskFieldErrors } from "@/lib/validations/task";
@@ -89,17 +90,29 @@ export async function updateTask(taskId: unknown, input: unknown): Promise<Resul
   return { ok: true };
 }
 
+export interface CompletionOutcome {
+  /** XP from the task itself (negative when marked as pending again). */
+  xpDelta: number;
+  /** Net XP from daily missions granted or taken back by this change. */
+  bonusXp: number;
+  dailyRewards: { title: string; xpReward: number }[];
+  /** Keys of achievements unlocked by this change. */
+  achievements: string[];
+  level: number;
+  leveledUp: boolean;
+}
+
 export async function setTaskCompleted(
   taskId: unknown,
   completed: unknown,
-): Promise<Result<{ xpDelta: number; level: number; leveledUp: boolean }>> {
+): Promise<Result<CompletionOutcome>> {
   const user = await requireUser();
   const id = taskIdSchema.safeParse(taskId);
   const done = z.boolean().safeParse(completed);
   if (!id.success || !done.success) return NOT_FOUND;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx): Promise<CompletionOutcome | null> => {
       const task = await tx.task.findFirst({
         where: { id: id.data, userId: user.id },
         select: { status: true, xpReward: true },
@@ -111,21 +124,30 @@ export async function setTaskCompleted(
         where: { id: user.id },
         select: { level: true },
       });
-      if (task.status === target) {
-        return { xpDelta: 0, level: current.level, leveledUp: false };
-      }
+      const unchanged: CompletionOutcome = {
+        xpDelta: 0,
+        bonusXp: 0,
+        dailyRewards: [],
+        achievements: [],
+        level: current.level,
+        leveledUp: false,
+      };
+      if (task.status === target) return unchanged;
 
+      const now = new Date();
       // Conditional update so a double click can't award the XP twice.
       const { count } = await tx.task.updateMany({
         where: { id: id.data, userId: user.id, status: task.status },
-        data: { status: target, completedAt: done.data ? new Date() : null },
+        data: { status: target, completedAt: done.data ? now : null },
       });
-      if (count === 0) return { xpDelta: 0, level: current.level, leveledUp: false };
+      if (count === 0) return unchanged;
 
       const xpDelta = done.data ? task.xpReward : -task.xpReward;
+      const daily = await syncDailyMissions(tx, user.id, now);
+
       const { xp } = await tx.user.update({
         where: { id: user.id },
-        data: { xp: { increment: xpDelta } },
+        data: { xp: { increment: xpDelta + daily.xpDelta } },
         select: { xp: true },
       });
 
@@ -136,11 +158,21 @@ export async function setTaskCompleted(
         data: { xp: safeXp, level },
       });
 
-      return { xpDelta, level, leveledUp: level > current.level };
+      const achievements = done.data ? await unlockAchievements(tx, user.id, level, now) : [];
+
+      return {
+        xpDelta,
+        bonusXp: daily.xpDelta,
+        dailyRewards: daily.rewarded,
+        achievements,
+        level,
+        leveledUp: level > current.level,
+      };
     });
 
     if (!result) return NOT_FOUND;
     revalidatePath("/");
+    revalidatePath("/logros");
     return { ok: true, ...result };
   } catch (error) {
     console.error("setTaskCompleted failed", error);

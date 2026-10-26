@@ -1,5 +1,7 @@
 import type { Difficulty, TaskStatus } from "@/generated/prisma/enums";
 import { currentStreak, dueDateToInput } from "@/lib/dates";
+import { ACHIEVEMENTS } from "@/lib/gamification/achievements";
+import { getDailyMissions } from "@/lib/gamification/server";
 import { prisma } from "@/lib/prisma";
 
 /** Serializable task shape passed from Server Components to the client. */
@@ -16,7 +18,7 @@ export interface TaskDTO {
 }
 
 export async function getDashboardData(userId: string) {
-  const [user, tasks, completedDates] = await Promise.all([
+  const [user, tasks, completedDates, dailyMissions, achievementsCount] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { xp: true },
@@ -39,6 +41,8 @@ export async function getDashboardData(userId: string) {
       where: { userId, status: "COMPLETED", completedAt: { not: null } },
       select: { completedAt: true },
     }),
+    getDailyMissions(prisma, userId),
+    prisma.userAchievement.count({ where: { userId } }),
   ]);
 
   const taskDtos: TaskDTO[] = tasks.map((task) => ({
@@ -53,5 +57,7 @@ export async function getDashboardData(userId: string) {
     completedCount: completedDates.length,
     pendingCount: tasks.length - completedDates.length,
     streak: currentStreak(completedDates.map((t) => t.completedAt!)),
+    dailyMissions,
+    achievements: { unlocked: achievementsCount, total: ACHIEVEMENTS.length },
   };
 }

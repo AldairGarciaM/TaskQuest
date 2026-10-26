@@ -36,6 +36,7 @@ src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser()
 src/app/(dashboard)/page.tsx     dashboard "/": stats, XP/nivel y misiones reales (getDashboardData)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
+src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
 src/app/auth/layout.tsx     layout de login/registro (panel de marca a la izquierda en lg)
@@ -47,7 +48,8 @@ src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/
 src/components/auth/        LoginForm, RegisterForm, AuthField, PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
-src/components/layout/      DashboardLayout (prop userName), AppSidebar (menú sin navegación), AppNavbar (saludo con nombre real), SignOutButton
+src/components/layout/      DashboardLayout (prop userName), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
+src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
 src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real)
 src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar),
                             TaskFormSheet (crear/editar en Sheet), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
@@ -62,7 +64,11 @@ src/lib/validations/auth.ts loginSchema / registerSchema (zod), compartidos clie
 src/lib/validations/task.ts taskInputSchema, taskIdSchema
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
-src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (serializable al cliente)
+src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
+src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
+src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
+src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
+src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements (Prisma)
 src/types/next-auth.d.ts    agrega id a Session.user
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
@@ -96,7 +102,8 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 ## Rutas
 | Ruta | Archivo | Estado |
 |---|---|---|
-| `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, loading y error |
+| `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
+| `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
@@ -109,7 +116,7 @@ Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Histor
 | `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, hashea y crea User. Devuelve `{ ok } | { ok:false, fieldErrors?, formError? }` |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
-| `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), suma/resta XP, recalcula nivel. Devuelve `{ xpDelta, level, leveledUp }` |
+| `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (email normalizado a minúsculas), sesión JWT 30 días |
 
@@ -117,17 +124,20 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), name, email (unique), passwordHash, xp (0), level (1) | Para NextAuth Credentials + JWT |
 | Task | id, title, description?, difficulty, xpReward, status, dueDate?, completedAt?, userId | FK a User con cascade; índice (userId, status) |
+| DailyMission | id, day ("YYYY-MM-DD" en APP_TIME_ZONE), type, target, xpReward, rewardedAt?, userId | Único (userId, day, type). El progreso NO se guarda: se calcula de las tareas completadas ese día |
+| UserAchievement | id, key, unlockedAt, userId | Único (userId, key). Definiciones en código |
 
-Enums: `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED.
-Previstas: Achievement, UserAchievement, DailyMission.
+Enums: `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
+Misiones diarias (3 de 4 por día): Ritmo constante (3 misiones, +30) · Reto mayor (1 Difícil/Épica, +40) · Puntualidad (2 a tiempo, +30) · Versatilidad (2 dificultades, +25).
+Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, daily-sweep. Sin XP; nunca se retiran.
 `dueDate` es fecha de calendario guardada a las 00:00 UTC (columna `timestamp` sin zona; se formatea con timeZone UTC).
 
 ## Variables de entorno
@@ -155,6 +165,9 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-26: XP y nivel se calculan solo en el servidor; descompletar resta la XP (evita farmear). Eliminar una completada conserva su XP.
 - 2026-10-26: Racha calculada en `America/Mexico_City` (APP_TIME_ZONE) para no depender de la zona del servidor; cuenta hasta ayer para no perderla antes de la primera tarea del día.
 - 2026-10-26: Tarjeta "Logros" reemplazada por "Pendientes" hasta que existan logros reales (sin datos ficticios).
+- 2026-10-26: Misiones diarias: solo se guarda el estado de recompensa; el progreso se recalcula de las tareas del día. Si el progreso baja (tarea desmarcada) se retira el bono → no se puede farmear. Se crean de forma perezosa al cargar el dashboard o al completar una tarea.
+- 2026-10-26: Logros definidos en código (sin tabla de catálogo) para evolucionarlos sin migraciones; no dan XP y no se revocan.
+- 2026-10-26: Tarjeta "Logros" vuelve al dashboard con datos reales (reemplaza "Pendientes").
 - 2026-10-26: Dashboard en route group `(dashboard)` para que loading/error cubran solo el contenido y el shell quede fijo. `requireUser` envuelto en `cache()` de React.
 - 2026-10-26: Pruebas de integración contra PostgreSQL real (no mocks de Prisma) en una BD aparte; se mockean solo `requireUser` y `revalidatePath`.
 - 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
@@ -175,10 +188,13 @@ Prioridad 2 — funcionalidad
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
-- [ ] Misiones diarias, racha, logros, calendario, estadísticas, historial.
+- [x] Misiones diarias, racha y logros.
+- [ ] Calendario, estadísticas, historial (en el menú como "Pronto").
+- [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
 Prioridad 3 — UX
-- [ ] Sidebar responsive (usar `Sheet`), navegación con `<Link>`.
+- [x] Navegación del sidebar con `<Link>`.
+- [ ] Sidebar responsive (usar `Sheet`).
 - [ ] Tema oscuro coherente con tokens; una sola librería de iconos.
 - [x] `aria-label` en botones de icono del navbar; metadata y `lang="es"`.
 - [ ] Quitar fuentes sin uso en `layout.tsx`.
@@ -191,6 +207,7 @@ Prioridad 4 — estabilidad
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Rama `feat/daily-missions-achievements`: migración, misiones diarias, logros, página /logros, sidebar con navegación. 81 pruebas pasan; smoke test con usuario demo.
 - 2026-10-26: Rama `feat/dashboard-states`: loading skeleton y error boundary del dashboard.
 - 2026-10-26: Rama `test/vitest`: Vitest con 61 pruebas (unit + integración de Server Actions y login).
 - 2026-10-26: Rama `feat/tasks`: CRUD de misiones, XP/nivel/racha reales, dashboard conectado, Sonner + Motion. Verificado: typecheck, lint, build, checks de xp/racha y 32 pruebas e2e de Server Actions contra `next start` (validación, XP sin duplicar en paralelo, aislamiento entre usuarios, sin sesión).

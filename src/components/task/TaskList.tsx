@@ -1,12 +1,13 @@
 "use client";
 
-import { ClipboardList, Plus, Sparkles } from "lucide-react";
+import { ClipboardList, Plus, Sparkles, Target, Trophy } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { deleteTask, setTaskCompleted } from "@/app/actions/tasks";
 import type { TaskDTO } from "@/lib/data/dashboard";
+import { ACHIEVEMENTS_BY_KEY } from "@/lib/gamification/achievements";
 import { cn } from "@/lib/utils";
 
 import DeleteTaskDialog from "./DeleteTaskDialog";
@@ -71,6 +72,26 @@ export default function TaskList({ tasks }: { tasks: TaskDTO[] }) {
         toast.success(`+${result.xpDelta} XP`, { description: `Completaste “${task.title}”` });
       } else if (result.xpDelta < 0) {
         toast(`${result.xpDelta} XP`, { description: `“${task.title}” volvió a pendientes` });
+      }
+      for (const reward of result.dailyRewards) {
+        toast(`Misión diaria: ${reward.title}`, {
+          description: `+${reward.xpReward} XP extra`,
+          icon: <Target className="size-4 text-emerald-300" />,
+        });
+      }
+      if (result.bonusXp < 0) {
+        toast(`${result.bonusXp} XP de misiones diarias`, {
+          description: "Una misión diaria ya no cumple su objetivo.",
+        });
+      }
+      for (const key of result.achievements) {
+        const achievement = ACHIEVEMENTS_BY_KEY.get(key);
+        if (!achievement) continue;
+        toast(`Logro desbloqueado: ${achievement.title}`, {
+          description: achievement.description,
+          icon: <Trophy className="size-4 text-yellow-300" />,
+          duration: 6000,
+        });
       }
       if (result.leveledUp) {
         toast(`¡Subiste a nivel ${result.level}!`, {

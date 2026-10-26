@@ -1,13 +1,14 @@
 import XpHeroCard from "@/components/dashboard/xpHeroCard";
 
 import {
-  ClipboardList,
   Flame,
   Target,
-  Star
+  Star,
+  Trophy
 } from "lucide-react";
 
 import StatsCard from "@/components/dashboard/StatsCard";
+import DailyMissionsCard from "@/components/gamification/DailyMissionsCard";
 import TaskList from "@/components/task/TaskList";
 import { getDashboardData } from "@/lib/data/dashboard";
 import { requireUser } from "@/lib/session";
@@ -41,10 +42,10 @@ export default async function HomePage() {
 
         <div>
           <StatsCard 
-            title = "Pendientes"
-            value = {data.pendingCount}
-            description = "Misiones por completar"
-            icon = {ClipboardList}
+            title = "Logros"
+            value = {`${data.achievements.unlocked} / ${data.achievements.total}`}
+            description = "Logros desbloqueados"
+            icon = {Trophy}
           />
         </div>
 
@@ -63,6 +64,8 @@ export default async function HomePage() {
       <div className="mt-8 space-y-8">
 
         <XpHeroCard xp={data.xp} userId={user.id} userName={userName} />
+
+        <DailyMissionsCard missions={data.dailyMissions} />
         
         <TaskList tasks={data.tasks} />
 

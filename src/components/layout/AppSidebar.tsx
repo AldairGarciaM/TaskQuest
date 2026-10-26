@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Home,
   CheckSquare,
@@ -6,19 +8,26 @@ import {
   BarChart3,
   History,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+import { cn } from "@/lib/utils";
 
 const menuItems = [
   {
     label: "Dashboard",
     icon: Home,
+    href: "/",
   },
   {
     label: "Misiones",
     icon: CheckSquare,
+    href: "/#missions-heading",
   },
   {
     label: "Logros",
     icon: Trophy,
+    href: "/logros",
   },
   {
     label: "Calendario",
@@ -34,39 +43,55 @@ const menuItems = [
   },
 ];
 
+const itemClass = "flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left";
+
 export default function AppSidebar() {
+  const pathname = usePathname();
+
   return (
     <aside className="w-72 border-r border-slate-800 bg-slate-950 p-6">
-      <h1 className="mb-10 text-3xl font-bold">
+      <p className="mb-10 text-3xl font-bold">
         ⚔️ TaskQuest
-      </h1>
+      </p>
 
-      <nav className="space-y-2">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
+      <nav aria-label="Principal">
+        <ul className="space-y-2">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
 
-          return (
-            <button
-              key={item.label}
-              className="
-                flex
-                w-full
-                items-center
-                gap-3
-                rounded-xl
-                px-4
-                py-3
-                text-left
-                transition
-                hover:bg-slate-800
-              "
-            >
-              <Icon size={20} />
+            if (!item.href) {
+              return (
+                <li key={item.label}>
+                  <span aria-disabled="true" className={cn(itemClass, "cursor-default text-slate-600")}>
+                    <Icon size={20} aria-hidden />
+                    <span className="flex-1">{item.label}</span>
+                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] tracking-wide text-slate-500 uppercase">
+                      Pronto
+                    </span>
+                  </span>
+                </li>
+              );
+            }
 
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+            const active = item.href === pathname;
+            return (
+              <li key={item.label}>
+                <Link
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    itemClass,
+                    "transition-colors duration-150",
+                    active ? "bg-slate-800 text-slate-50" : "text-slate-300 hover:bg-slate-800/60",
+                  )}
+                >
+                  <Icon size={20} aria-hidden />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </nav>
     </aside>
   );

@@ -19,6 +19,13 @@ enum TaskStatus {
   COMPLETED
 }
 
+enum DailyMissionType {
+  COMPLETE_TASKS
+  COMPLETE_HARD
+  COMPLETE_ON_TIME
+  COMPLETE_VARIETY
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -29,7 +36,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tasks Task[]
+  tasks         Task[]
+  dailyMissions DailyMission[]
+  achievements  UserAchievement[]
 }
 
 model Task {
@@ -48,4 +57,34 @@ model Task {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+}
+
+/// Three missions per user per day, picked from a catalog in src/lib/gamification/daily.ts.
+/// Progress is computed from the tasks completed that day; only the reward state is stored.
+model DailyMission {
+  id         String           @id @default(cuid())
+  /// Calendar day "YYYY-MM-DD" in APP_TIME_ZONE.
+  day        String
+  type       DailyMissionType
+  target     Int
+  xpReward   Int
+  rewardedAt DateTime?
+  createdAt  DateTime         @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day, type])
+}
+
+/// Achievement definitions live in code (src/lib/gamification/achievements.ts); this stores who unlocked what.
+model UserAchievement {
+  id         String   @id @default(cuid())
+  key        String
+  unlockedAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
 }

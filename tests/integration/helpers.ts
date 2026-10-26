@@ -41,3 +41,17 @@ export async function createSignedInUser(overrides?: Parameters<typeof createUse
   signInAs(user);
   return user;
 }
+
+/**
+ * Pre-creates today's daily missions with unreachable targets so they never pay a bonus.
+ * Use in tests that assert exact XP from tasks alone.
+ */
+export async function neutralizeDailyMissions(userId: string) {
+  const { dayKey } = await import("@/lib/dates");
+  const { pickDailyTypes } = await import("@/lib/gamification/daily");
+  const day = dayKey(new Date());
+  await prisma.dailyMission.createMany({
+    data: pickDailyTypes(userId, day).map((type) => ({ userId, day, type, target: 1_000_000, xpReward: 0 })),
+    skipDuplicates: true,
+  });
+}

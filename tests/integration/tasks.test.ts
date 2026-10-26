@@ -3,7 +3,20 @@ import { describe, expect, it } from "vitest";
 import { createTask, deleteTask, setTaskCompleted, updateTask } from "@/app/actions/tasks";
 import { prisma } from "@/lib/prisma";
 
-import { createSignedInUser, createUser, signInAs, signOut } from "./helpers";
+import {
+  createSignedInUser as createSignedInUserWithDailies,
+  createUser,
+  neutralizeDailyMissions,
+  signInAs,
+  signOut,
+} from "./helpers";
+
+// These tests assert XP from tasks alone, so daily mission bonuses are switched off.
+async function createSignedInUser() {
+  const user = await createSignedInUserWithDailies();
+  await neutralizeDailyMissions(user.id);
+  return user;
+}
 
 async function newTask(input: Record<string, unknown>) {
   const result = await createTask(input);
