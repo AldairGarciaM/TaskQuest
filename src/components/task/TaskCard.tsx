@@ -62,7 +62,7 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
         <div className="flex items-start gap-4">
           <Checkbox
             checked={completed}
-            onCheckedChange={(checked) => onToggle(task, checked)}
+            onCheckedChange={(checked) => onToggle(task, checked)} 
             aria-label={completed ? `Marcar "${task.title}" como pendiente` : `Completar "${task.title}"`}
             className="mt-1 size-5 rounded-md border-slate-600 text-white data-checked:border-violet-600 data-checked:bg-violet-600"
           />

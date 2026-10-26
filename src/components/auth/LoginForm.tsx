@@ -42,7 +42,7 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
       const result = await signIn("credentials", { ...parsed.data, redirect: false });
 
       if (!result?.ok) {
-        setFormError("Correo o contraseña incorrectos.");
+        setFormError("Usuario, correo o contraseña incorrectos.");
         return;
       }
 
@@ -71,14 +71,14 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
         {formError && <FormAlert message={formError} />}
 
         <FormField
-          label="Correo"
-          name="email"
-          type="email"
-          autoComplete="email"
-          inputMode="email"
-          placeholder="tu@correo.com"
+          label="Correo o usuario"
+          name="identifier"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="tu@correo.com o tu usuario"
           required
-          error={fieldErrors.email?.[0]}
+          error={fieldErrors.identifier?.[0]}
         />
 
         <PasswordField

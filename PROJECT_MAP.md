@@ -45,7 +45,7 @@ src/app/auth/register/page.tsx  /auth/register
 src/app/auth/actions.ts     Server Action registerUser (zod + bcrypt cost 12, P2002 → email duplicado)
 src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
 src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
-src/components/auth/        LoginForm, RegisterForm, AuthField, PasswordField, SubmitButton, FormAlert
+src/components/auth/        LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (prop userName), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
@@ -60,7 +60,8 @@ src/lib/prisma.ts           PrismaClient singleton con adapter pg
 src/lib/auth.ts             authOptions de NextAuth (Credentials, JWT, session.user.id)
 src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /auth/login
 src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
-src/lib/validations/auth.ts loginSchema / registerSchema (zod), compartidos cliente/servidor
+src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profileSchema, registerSchema, usernameSchema
+src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
@@ -69,7 +70,7 @@ src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
 src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
 src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements (Prisma)
-src/types/next-auth.d.ts    agrega id a Session.user
+src/types/next-auth.d.ts    agrega id, username y firstName a Session.user / JWT
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
 prisma/migrations/          20261026154201_init (User, Task, enums)
@@ -113,21 +114,21 @@ Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Histor
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
 |---|---|---|
-| `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, hashea y crea User. Devuelve `{ ok } | { ok:false, fieldErrors?, formError? }` |
+| `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
-| NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (email normalizado a minúsculas), sesión JWT 30 días |
+| NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName |
 
 Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista. Todas las consultas de Task filtran por `userId` del usuario de la sesión. Las acciones devuelven `{ ok: true, ... } | { ok: false, error?, fieldErrors? }`.
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email).
 | Modelo | Campos clave | Notas |
 |---|---|---|
-| User | id (cuid), name, email (unique), passwordHash, xp (0), level (1) | Para NextAuth Credentials + JWT |
+| User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
 | Task | id, title, description?, difficulty, xpReward, status, dueDate?, completedAt?, userId | FK a User con cascade; índice (userId, status) |
 | DailyMission | id, day ("YYYY-MM-DD" en APP_TIME_ZONE), type, target, xpReward, rewardedAt?, userId | Único (userId, day, type). El progreso NO se guarda: se calcula de las tareas completadas ese día |
 | UserAchievement | id, key, unlockedAt, userId | Único (userId, key). Definiciones en código |
@@ -165,6 +166,8 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-26: XP y nivel se calculan solo en el servidor; descompletar resta la XP (evita farmear). Eliminar una completada conserva su XP.
 - 2026-10-26: Racha calculada en `America/Mexico_City` (APP_TIME_ZONE) para no depender de la zona del servidor; cuenta hasta ayer para no perderla antes de la primera tarea del día.
 - 2026-10-26: Tarjeta "Logros" reemplazada por "Pendientes" hasta que existan logros reales (sin datos ficticios).
+- 2026-10-26: Perfil con nombre, apellidos y username para todos; login con correo o usuario (decisión por defecto, el usuario pidió no preguntar en proyecto personal).
+- 2026-10-26: ensureDailyMissions solo crea misiones si el día no tiene ninguna (evitaba una 4ª misión si el catálogo/selección cambiaba).
 - 2026-10-26: Misiones diarias: solo se guarda el estado de recompensa; el progreso se recalcula de las tareas del día. Si el progreso baja (tarea desmarcada) se retira el bono → no se puede farmear. Se crean de forma perezosa al cargar el dashboard o al completar una tarea.
 - 2026-10-26: Logros definidos en código (sin tabla de catálogo) para evolucionarlos sin migraciones; no dan XP y no se revocan.
 - 2026-10-26: Tarjeta "Logros" vuelve al dashboard con datos reales (reemplaza "Pendientes").
@@ -173,6 +176,11 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
 
 ## Pendientes / deuda técnica
+En curso — organizaciones (idea del usuario 2026-10-26)
+- [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
+- [ ] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer SMTP; sin SMTP → consola + copiar enlace), página para aceptar invitación (pide nombre, apellidos, usuario, contraseña).
+- [ ] Tablero de la organización: asignar o dejar libre, tomar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
+
 Prioridad 1 — entorno
 - [x] Build roto en `TaskCard.tsx` (import inexistente) y lógica de dificultad duplicada.
 - [x] Gestor único pnpm.
@@ -207,6 +215,7 @@ Prioridad 4 — estabilidad
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Rama `feat/user-profile`: firstName/lastName/username, login con correo o usuario, migración con backfill. 86 pruebas pasan. Usuario demo: `demo` / `demo@taskquest.local`.
 - 2026-10-26: Rama `feat/daily-missions-achievements`: migración, misiones diarias, logros, página /logros, sidebar con navegación. 81 pruebas pasan; smoke test con usuario demo.
 - 2026-10-26: Rama `feat/dashboard-states`: loading skeleton y error boundary del dashboard.
 - 2026-10-26: Rama `test/vitest`: Vitest con 61 pruebas (unit + integración de Server Actions y login).

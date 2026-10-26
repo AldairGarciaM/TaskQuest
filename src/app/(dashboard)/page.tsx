@@ -16,7 +16,7 @@ import { requireUser } from "@/lib/session";
 export default async function HomePage() {
   const user = await requireUser();
   const data = await getDashboardData(user.id);
-  const userName = user.name ?? "aventurero";
+  const userName = user.name || "aventurero";
 
   return (
     <>

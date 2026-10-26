@@ -28,7 +28,10 @@ enum DailyMissionType {
 
 model User {
   id           String   @id @default(cuid())
-  name         String
+  firstName    String
+  lastName     String
+  /// Lowercase, 3–20 chars of a-z, 0-9, "_" or ".". Can be used to sign in.
+  username     String   @unique
   email        String   @unique
   passwordHash String
   xp           Int      @default(0)

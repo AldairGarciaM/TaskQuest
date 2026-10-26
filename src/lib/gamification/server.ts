@@ -8,8 +8,11 @@ import { DAILY_CATALOG, dailyProgress, pickDailyTypes, type CompletionToday } fr
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
-/** Creates today's daily missions for the user if they don't exist yet. */
+/** Creates the day's missions for the user unless that day already has some. */
 export async function ensureDailyMissions(db: Db, userId: string, day: string) {
+  const existing = await db.dailyMission.findMany({ where: { userId, day }, orderBy: { createdAt: "asc" } });
+  if (existing.length > 0) return existing;
+
   await db.dailyMission.createMany({
     data: pickDailyTypes(userId, day).map((type) => ({
       userId,

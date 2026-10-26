@@ -7,19 +7,18 @@ import { useState, useTransition, type FormEvent } from "react";
 import { z } from "zod";
 
 import { registerUser } from "@/app/auth/actions";
-import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
+import type { ProfileFieldErrors } from "@/lib/user";
+import { registerSchema } from "@/lib/validations/auth";
 
 import FormField from "@/components/form/FormField";
 import FormAlert from "./FormAlert";
-import PasswordField from "./PasswordField";
+import ProfileFields from "./ProfileFields";
 import SubmitButton from "./SubmitButton";
-
-type FieldErrors = Partial<Record<keyof RegisterInput, string[]>>;
 
 export default function RegisterForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [fieldErrors, setFieldErrors] = useState<ProfileFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -44,7 +43,7 @@ export default function RegisterForm() {
       }
 
       const login = await signIn("credentials", {
-        email: parsed.data.email,
+        identifier: parsed.data.email,
         password: parsed.data.password,
         redirect: false,
       });
@@ -65,34 +64,20 @@ export default function RegisterForm() {
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {formError && <FormAlert message={formError} />}
 
-        <FormField
-          label="Nombre"
-          name="name"
-          autoComplete="name"
-          placeholder="¿Cómo te llamamos?"
-          required
-          error={fieldErrors.name?.[0]}
-        />
-
-        <FormField
-          label="Correo"
-          name="email"
-          type="email"
-          autoComplete="email"
-          inputMode="email"
-          placeholder="tu@correo.com"
-          required
-          error={fieldErrors.email?.[0]}
-        />
-
-        <PasswordField
-          label="Contraseña"
-          name="password"
-          autoComplete="new-password"
-          placeholder="Mínimo 8 caracteres"
-          required
-          minLength={8}
-          error={fieldErrors.password?.[0]}
+        <ProfileFields
+          errors={fieldErrors}
+          beforePassword={
+            <FormField
+              label="Correo"
+              name="email"
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              placeholder="tu@correo.com"
+              required
+              error={fieldErrors.email?.[0]}
+            />
+          }
         />
 
         <SubmitButton pending={pending} pendingLabel="Creando cuenta…">

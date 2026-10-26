@@ -4,5 +4,5 @@ import { requireUser } from "@/lib/session";
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
 
-  return <DashboardLayout userName={user.name ?? "aventurero"}>{children}</DashboardLayout>;
+  return <DashboardLayout userName={user.firstName || "aventurero"}>{children}</DashboardLayout>;
 }

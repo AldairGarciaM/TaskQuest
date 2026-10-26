@@ -6,6 +6,8 @@ interface SessionUser {
   id: string;
   name: string;
   email: string;
+  username: string;
+  firstName: string;
 }
 
 export const currentUser: { value: SessionUser | null } = { value: null };
@@ -21,19 +23,21 @@ export function signOut() {
 let counter = 0;
 
 /** Creates a user directly in the database and returns its session shape. */
-export async function createUser(overrides: { name?: string; email?: string; xp?: number } = {}) {
+export async function createUser(overrides: { firstName?: string; email?: string; xp?: number } = {}) {
   counter++;
   const user = await prisma.user.create({
     data: {
-      name: overrides.name ?? `Tester ${counter}`,
+      firstName: overrides.firstName ?? "Tester",
+      lastName: `Número ${counter}`,
+      username: `tester_${counter}_${Date.now().toString(36)}`.slice(0, 20),
       email: overrides.email ?? `tester${counter}-${Date.now()}@taskquest.test`,
       // Low cost keeps tests fast; production uses cost 12.
       passwordHash: await hash("Secreta123", 4),
       xp: overrides.xp ?? 0,
     },
-    select: { id: true, name: true, email: true },
+    select: { id: true, firstName: true, lastName: true, email: true, username: true },
   });
-  return user;
+  return { ...user, name: `${user.firstName} ${user.lastName}` };
 }
 
 export async function createSignedInUser(overrides?: Parameters<typeof createUser>[0]) {
