@@ -3,16 +3,16 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type ComponentProps } from "react";
 
-import AuthField from "./AuthField";
+import FormField from "@/components/form/FormField";
 
-type PasswordFieldProps = Omit<ComponentProps<typeof AuthField>, "type" | "trailing">;
+type PasswordFieldProps = Omit<ComponentProps<typeof FormField>, "type" | "trailing">;
 
 export default function PasswordField(props: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const Icon = visible ? EyeOff : Eye;
 
   return (
-    <AuthField
+    <FormField
       {...props}
       type={visible ? "text" : "password"}
       trailing={

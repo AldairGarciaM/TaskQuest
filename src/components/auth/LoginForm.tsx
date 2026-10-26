@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { loginSchema, type LoginInput } from "@/lib/validations/auth";
 
-import AuthField from "./AuthField";
+import FormField from "@/components/form/FormField";
 import FormAlert from "./FormAlert";
 import PasswordField from "./PasswordField";
 import SubmitButton from "./SubmitButton";
@@ -70,7 +70,7 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {formError && <FormAlert message={formError} />}
 
-        <AuthField
+        <FormField
           label="Correo"
           name="email"
           type="email"

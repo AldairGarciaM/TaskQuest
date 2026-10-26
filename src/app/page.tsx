@@ -2,27 +2,30 @@ import DashboardLayout from "../components/layout/DashboardLayout";
 import XpHeroCard from "@/components/dashboard/xpHeroCard";
 
 import {
-  Trophy,
-  Flame, 
+  ClipboardList,
+  Flame,
   Target,
   Star
 } from "lucide-react";
 
 import StatsCard from "@/components/dashboard/StatsCard";
 import TaskList from "@/components/task/TaskList";
+import { getDashboardData } from "@/lib/data/dashboard";
 import { requireUser } from "@/lib/session";
 
 export default async function HomePage() {
   const user = await requireUser();
+  const data = await getDashboardData(user.id);
+  const userName = user.name ?? "aventurero";
 
   return (
-    <DashboardLayout userName={user.name ?? "aventurero"}>
+    <DashboardLayout userName={userName}>
 
-      <div className = "mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <div className = "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <StatsCard 
             title = "XP Total"
-            value = "2,580"
+            value = {data.xp.toLocaleString("es-MX")}
             description = "Puntos de experiencia acumulados"
             icon = {Star}
           />
@@ -30,8 +33,8 @@ export default async function HomePage() {
 
         <div >
           <StatsCard 
-            title = "Misiones"
-            value = "7"
+            title = "Completadas"
+            value = {data.completedCount}
             description = "Misiones completadas"
             icon = {Target}
           />
@@ -39,17 +42,17 @@ export default async function HomePage() {
 
         <div>
           <StatsCard 
-            title = "Logros"
-            value = "3"
-            description = "Logros desbloqueados"
-            icon = {Trophy}
+            title = "Pendientes"
+            value = {data.pendingCount}
+            description = "Misiones por completar"
+            icon = {ClipboardList}
           />
         </div>
 
         <div>
           <StatsCard 
             title = "Racha de días"
-            value = "5"
+            value = {data.streak}
             description = "Días consecutivos completando misiones"
             icon = {Flame}
           />
@@ -58,11 +61,11 @@ export default async function HomePage() {
 
       </div>
       
-      <div className="space-y-6">
+      <div className="mt-8 space-y-8">
 
-        <XpHeroCard />
+        <XpHeroCard xp={data.xp} userId={user.id} userName={userName} />
         
-        <TaskList />
+        <TaskList tasks={data.tasks} />
 
       </div>
       

@@ -7,8 +7,8 @@ Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logr
 ## Stack
 Next.js 16.2.9 full-stack (App Router, React Compiler activo) · React 19.2.4 · TypeScript `strict` ·
 Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI, iconos Phosphor) + Lucide en componentes propios ·
-Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · PostgreSQL (local).
-No instalados aún: Motion, Sonner, framework de tests.
+Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · Motion (`motion/react`) · Sonner · PostgreSQL (local).
+No instalado aún: framework de tests.
 
 > Excepción al stack base global: NO hay `frontend/` + `backend/` Laravel. Todo vive en Next.js (decisión del usuario, 2026-10-23).
 
@@ -29,7 +29,8 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 ## Estructura
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
-src/app/page.tsx            dashboard "/" protegido con requireUser(); stats/XP/tareas aún hardcodeados
+src/app/page.tsx            dashboard "/" protegido: stats, XP/nivel y misiones reales (getDashboardData)
+src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
 src/app/auth/layout.tsx     layout de login/registro (panel de marca a la izquierda en lg)
 src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl, muestra ?registered=1)
@@ -38,17 +39,24 @@ src/app/auth/actions.ts     Server Action registerUser (zod + bcrypt cost 12, P2
 src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
 src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
 src/components/auth/        LoginForm, RegisterForm, AuthField, PasswordField, SubmitButton, FormAlert
-src/app/constants/taskDifficulty.tsx  tipo Difficulty + DifficultyStyles (color, badge, icono Lucide)
+src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (prop userName), AppSidebar (menú sin navegación), AppNavbar (saludo con nombre real), SignOutButton
-src/components/dashboard/   StatsCard, xpHeroCard (XP/nivel fijos)
-src/components/task/        TaskList (array estático), TaskCard
+src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real)
+src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar),
+                            TaskFormSheet (crear/editar en Sheet), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
+src/components/form/        FormField (input con label/error accesible; usado en auth y misiones)
+src/components/ui/sonner.tsx  <Toaster /> oscuro (montado en el layout raíz)
 src/lib/utils.ts            cn()
 src/lib/prisma.ts           PrismaClient singleton con adapter pg
 src/lib/auth.ts             authOptions de NextAuth (Credentials, JWT, session.user.id)
 src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /auth/login
 src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
 src/lib/validations/auth.ts loginSchema / registerSchema (zod), compartidos cliente/servidor
+src/lib/validations/task.ts taskInputSchema, taskIdSchema
+src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle
+src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
+src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (serializable al cliente)
 src/types/next-auth.d.ts    agrega id a Session.user
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
@@ -64,17 +72,19 @@ prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 | Tokens de color / tipografía | `src/app/globals.css`, fuentes en `src/app/layout.tsx` |
 | Componentes shadcn | `src/components/ui/` (config en `components.json`) |
 | Estilos por dificultad | `src/app/constants/taskDifficulty.tsx` |
-| Lógica de XP / nivel | `src/components/dashboard/xpHeroCard.tsx` (solo visual) |
+| Lógica de XP / nivel | `src/lib/xp.ts` (se aplica en `setTaskCompleted`) |
+| Racha / zona horaria | `src/lib/dates.ts` |
+| Datos del dashboard | `src/lib/data/dashboard.ts` |
 | Autenticación | `src/lib/auth.ts`, `src/lib/session.ts`, `src/proxy.ts`, `src/app/auth/` |
 | Usuario actual en servidor | `const user = await requireUser()` de `@/lib/session` |
 | Esquema de BD | `prisma/schema.prisma` |
 | Cliente de BD | `import { prisma } from "@/lib/prisma"` |
-| Server Actions / Route Handlers | `src/app/auth/actions.ts`, `src/app/api/auth/[...nextauth]/route.ts` |
+| Server Actions / Route Handlers | `src/app/actions/tasks.ts`, `src/app/auth/actions.ts`, `src/app/api/auth/[...nextauth]/route.ts` |
 
 ## Rutas
 | Ruta | Archivo | Estado |
 |---|---|---|
-| `/` | `src/app/page.tsx` | Protegida; UI con datos fijos salvo el nombre |
+| `/` | `src/app/page.tsx` | Protegida; datos reales |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
@@ -85,9 +95,13 @@ Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Histor
 | Nombre | Archivo | Qué hace |
 |---|---|---|
 | `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, hashea y crea User. Devuelve `{ ok } | { ok:false, fieldErrors?, formError? }` |
+| `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
+| `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
+| `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), suma/resta XP, recalcula nivel. Devuelve `{ xpDelta, level, leveledUp }` |
+| `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (email normalizado a minúsculas), sesión JWT 30 días |
 
-Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista.
+Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista. Todas las consultas de Task filtran por `userId` del usuario de la sesión. Las acciones devuelven `{ ok: true, ... } | { ok: false, error?, fieldErrors? }`.
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
@@ -99,6 +113,10 @@ Migraciones aplicadas: `20261026154201_init`.
 
 Enums: `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED.
 Previstas: Achievement, UserAchievement, DailyMission.
+
+Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
+Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
+`dueDate` es fecha de calendario guardada a las 00:00 UTC (columna `timestamp` sin zona; se formatea con timeZone UTC).
 
 ## Variables de entorno
 Plantilla en `.env.example` (copiar a `.env`):
@@ -121,6 +139,9 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-23: Enums de BD en inglés; mapeo a etiquetas en español en la UI.
 - 2026-10-26: Login vía `signIn("credentials", { redirect: false })` en cliente; registro vía Server Action y luego auto-login. Comparación bcrypt contra hash ficticio si el email no existe (mismo tiempo de respuesta).
 - 2026-10-26: Validación con zod compartida cliente/servidor (`src/lib/validations/`). Contraseña 8–72 caracteres (límite de bcrypt).
+- 2026-10-26: XP y nivel se calculan solo en el servidor; descompletar resta la XP (evita farmear). Eliminar una completada conserva su XP.
+- 2026-10-26: Racha calculada en `America/Mexico_City` (APP_TIME_ZONE) para no depender de la zona del servidor; cuenta hasta ayer para no perderla antes de la primera tarea del día.
+- 2026-10-26: Tarjeta "Logros" reemplazada por "Pendientes" hasta que existan logros reales (sin datos ficticios).
 - 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
 
 ## Pendientes / deuda técnica
@@ -129,16 +150,16 @@ Prioridad 1 — entorno
 - [x] Gestor único pnpm.
 - [x] `.env.example`, `prisma.config.ts`, esquema Prisma, `src/lib/prisma.ts`.
 - [x] `.env` local creado y primera migración `init` aplicada.
-- [ ] Mapeo Difficulty enum (EASY…) ↔ etiqueta UI (Fácil…) cuando se conecten datos reales.
+- [x] Mapeo Difficulty enum ↔ etiqueta UI (`DifficultyStyles[difficulty].label`).
 - [x] Git: remoto `origin` = github.com/AldairGarciaM/TaskQuest. Trabajo en ramas; el usuario revisa y fusiona (no abrir/fusionar PRs ni hacer `git pull` sin su visto bueno).
 
 Prioridad 2 — funcionalidad
 - [x] Auth (NextAuth v4): login, registro, logout, proxy y `requireUser()`.
 - [ ] Rate limiting en login/registro (ahora no hay límite de intentos).
 - [ ] Recuperar contraseña (requiere envío de correo).
-- [ ] CRUD de tareas con Server Actions + validación en servidor.
-- [ ] XP y nivel calculados en servidor al completar tareas.
-- [ ] Dashboard con datos reales + estados de carga/vacío/error.
+- [x] CRUD de tareas con Server Actions + validación en servidor.
+- [x] XP y nivel calculados en servidor al completar tareas.
+- [x] Dashboard con datos reales + estado vacío. Falta `loading.tsx` / `error.tsx`.
 - [ ] Misiones diarias, racha, logros, calendario, estadísticas, historial.
 
 Prioridad 3 — UX
@@ -146,13 +167,15 @@ Prioridad 3 — UX
 - [ ] Tema oscuro coherente con tokens; una sola librería de iconos.
 - [x] `aria-label` en botones de icono del navbar; metadata y `lang="es"`.
 - [ ] Quitar fuentes sin uso en `layout.tsx`.
-- [ ] Motion (con `useReducedMotion`) y Sonner.
+- [x] Motion (con `useReducedMotion`) y Sonner en misiones.
+- [ ] Los componentes shadcn usan tokens de tema claro; se sobreescriben con clases slate en cada uso.
 
 Prioridad 4 — estabilidad
-- [ ] Tests (lógica de XP/nivel, actions, e2e del flujo principal).
+- [ ] Tests en el repo (lógica de XP/nivel, actions, e2e). Por ahora se verificó con scripts temporales (ver Historial).
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Rama `feat/tasks`: CRUD de misiones, XP/nivel/racha reales, dashboard conectado, Sonner + Motion. Verificado: typecheck, lint, build, checks de xp/racha y 32 pruebas e2e de Server Actions contra `next start` (validación, XP sin duplicar en paralelo, aislamiento entre usuarios, sin sesión).
 - 2026-10-26: Rama `feat/auth`: login/registro/logout con NextAuth Credentials + JWT, proxy de rutas, dashboard protegido. Probado con curl contra `next start` (redirects, login correcto/incorrecto, sesión, callbackUrl externo ignorado).
 - 2026-10-26: Remoto GitHub configurado; Fase 1 subida en rama `chore/phase-1-setup`. Rama `feat/database`: `.env` local + migración `init` aplicada (tablas User, Task).
 - 2026-10-23: Fase 1 — build arreglado (TaskCard usa DifficultyStyles), pnpm único, Prisma 7 configurado (schema User/Task, config, cliente singleton), `.env.example`, scripts db:*.

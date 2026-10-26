@@ -2,19 +2,19 @@ import { useId, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-interface AuthFieldProps extends ComponentProps<"input"> {
+interface FormFieldProps extends ComponentProps<"input"> {
   label: string;
   error?: string;
   trailing?: ReactNode;
 }
 
-export default function AuthField({
+export default function FormField({
   label,
   error,
   trailing,
   className,
   ...props
-}: AuthFieldProps) {
+}: FormFieldProps) {
   const id = useId();
   const errorId = `${id}-error`;
 

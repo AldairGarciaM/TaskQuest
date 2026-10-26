@@ -1,9 +1,10 @@
-import { DifficultyStyles, type Difficulty } from "@/app/constants/taskDifficulty";
+import { DifficultyStyles } from "@/app/constants/taskDifficulty";
+import type { Difficulty } from "@/generated/prisma/enums";
 
 const sampleQuests: { title: string; difficulty: Difficulty; xp: number; done: boolean }[] = [
-  { title: "Responder correos pendientes", difficulty: "Fácil", xp: 10, done: true },
-  { title: "Terminar el reporte mensual", difficulty: "Difícil", xp: 50, done: true },
-  { title: "Preparar la presentación del lunes", difficulty: "Épica", xp: 100, done: false },
+  { title: "Responder correos pendientes", difficulty: "EASY", xp: 10, done: true },
+  { title: "Terminar el reporte mensual", difficulty: "HARD", xp: 50, done: true },
+  { title: "Preparar la presentación del lunes", difficulty: "EPIC", xp: 100, done: false },
 ];
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {

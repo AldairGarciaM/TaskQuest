@@ -9,7 +9,7 @@ import { z } from "zod";
 import { registerUser } from "@/app/auth/actions";
 import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
 
-import AuthField from "./AuthField";
+import FormField from "@/components/form/FormField";
 import FormAlert from "./FormAlert";
 import PasswordField from "./PasswordField";
 import SubmitButton from "./SubmitButton";
@@ -65,7 +65,7 @@ export default function RegisterForm() {
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {formError && <FormAlert message={formError} />}
 
-        <AuthField
+        <FormField
           label="Nombre"
           name="name"
           autoComplete="name"
@@ -74,7 +74,7 @@ export default function RegisterForm() {
           error={fieldErrors.name?.[0]}
         />
 
-        <AuthField
+        <FormField
           label="Correo"
           name="email"
           type="email"
