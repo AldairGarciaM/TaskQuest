@@ -8,7 +8,7 @@ Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logr
 Next.js 16.2.9 full-stack (App Router, React Compiler activo) · React 19.2.4 · TypeScript `strict` ·
 Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI, iconos Phosphor) + Lucide en componentes propios ·
 Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · Motion (`motion/react`) · Sonner · PostgreSQL (local).
-No instalado aún: framework de tests.
+Tests: Vitest 3 (Vitest 5 exige Node 22; aquí se usa Node 20.19).
 
 > Excepción al stack base global: NO hay `frontend/` + `backend/` Laravel. Todo vive en Next.js (decisión del usuario, 2026-10-23).
 
@@ -23,13 +23,19 @@ No instalado aún: framework de tests.
 | `pnpm db:generate` | Regenera el cliente Prisma en `src/generated/prisma` |
 | `pnpm db:migrate` | `prisma migrate dev` (requiere `.env` con `DATABASE_URL`) |
 | `pnpm db:studio` | Prisma Studio |
+| `pnpm test` | Todas las pruebas (unit + integration) |
+| `pnpm test:unit` / `pnpm test:integration` | Solo un proyecto de Vitest |
+| `pnpm test:watch` | Vitest en modo watch |
 
-Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuilds` aprueba scripts de `@prisma/engines`, `prisma`, `sharp`, `unrs-resolver`.
+Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuilds` aprueba scripts de `esbuild`, `@prisma/engines`, `prisma`, `sharp`, `unrs-resolver`.
 
 ## Estructura
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
-src/app/page.tsx            dashboard "/" protegido: stats, XP/nivel y misiones reales (getDashboardData)
+src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser()
+src/app/(dashboard)/page.tsx     dashboard "/": stats, XP/nivel y misiones reales (getDashboardData)
+src/app/(dashboard)/loading.tsx  skeleton del contenido
+src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
 src/app/auth/layout.tsx     layout de login/registro (panel de marca a la izquierda en lg)
@@ -64,6 +70,12 @@ prisma/migrations/          20261026154201_init (User, Task, enums)
 prisma/seed.ts              VACÍO
 prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 .env.example                variables requeridas (sin valores reales)
+vitest.config.mts           proyectos "unit" e "integration" (integration en un solo fork)
+tests/unit/                 xp, dates, validations, safe-redirect (lógica pura)
+tests/integration/          Server Actions y login contra la BD `<db>_test`
+  global-setup.ts           crea la BD de prueba y aplica `prisma migrate deploy`
+  setup.ts                  apunta DATABASE_URL a la BD de prueba, mockea next/cache y @/lib/session, TRUNCATE antes de cada test
+  helpers.ts                createUser / createSignedInUser / signInAs / signOut
 ```
 
 ## Dónde está cada cosa
@@ -84,7 +96,7 @@ prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 ## Rutas
 | Ruta | Archivo | Estado |
 |---|---|---|
-| `/` | `src/app/page.tsx` | Protegida; datos reales |
+| `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, loading y error |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
@@ -123,6 +135,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - `DATABASE_URL` — conexión PostgreSQL
 - `NEXTAUTH_URL` — URL base de la app
 - `NEXTAUTH_SECRET` — secreto de sesión
+- `TEST_DATABASE_URL` — opcional; si falta, las pruebas usan `DATABASE_URL` con sufijo `_test`. El nombre debe terminar en `_test` o las pruebas se niegan a correr.
 
 ## Convenciones
 - Componentes con `export default`, props tipadas con `interface`.
@@ -142,6 +155,8 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-26: XP y nivel se calculan solo en el servidor; descompletar resta la XP (evita farmear). Eliminar una completada conserva su XP.
 - 2026-10-26: Racha calculada en `America/Mexico_City` (APP_TIME_ZONE) para no depender de la zona del servidor; cuenta hasta ayer para no perderla antes de la primera tarea del día.
 - 2026-10-26: Tarjeta "Logros" reemplazada por "Pendientes" hasta que existan logros reales (sin datos ficticios).
+- 2026-10-26: Dashboard en route group `(dashboard)` para que loading/error cubran solo el contenido y el shell quede fijo. `requireUser` envuelto en `cache()` de React.
+- 2026-10-26: Pruebas de integración contra PostgreSQL real (no mocks de Prisma) en una BD aparte; se mockean solo `requireUser` y `revalidatePath`.
 - 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
 
 ## Pendientes / deuda técnica
@@ -159,7 +174,7 @@ Prioridad 2 — funcionalidad
 - [ ] Recuperar contraseña (requiere envío de correo).
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
-- [x] Dashboard con datos reales + estado vacío. Falta `loading.tsx` / `error.tsx`.
+- [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
 - [ ] Misiones diarias, racha, logros, calendario, estadísticas, historial.
 
 Prioridad 3 — UX
@@ -171,10 +186,13 @@ Prioridad 3 — UX
 - [ ] Los componentes shadcn usan tokens de tema claro; se sobreescriben con clases slate en cada uso.
 
 Prioridad 4 — estabilidad
-- [ ] Tests en el repo (lógica de XP/nivel, actions, e2e). Por ahora se verificó con scripts temporales (ver Historial).
+- [x] Tests unitarios y de integración en el repo (Vitest).
+- [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
+- 2026-10-26: Rama `feat/dashboard-states`: loading skeleton y error boundary del dashboard.
+- 2026-10-26: Rama `test/vitest`: Vitest con 61 pruebas (unit + integración de Server Actions y login).
 - 2026-10-26: Rama `feat/tasks`: CRUD de misiones, XP/nivel/racha reales, dashboard conectado, Sonner + Motion. Verificado: typecheck, lint, build, checks de xp/racha y 32 pruebas e2e de Server Actions contra `next start` (validación, XP sin duplicar en paralelo, aislamiento entre usuarios, sin sesión).
 - 2026-10-26: Rama `feat/auth`: login/registro/logout con NextAuth Credentials + JWT, proxy de rutas, dashboard protegido. Probado con curl contra `next start` (redirects, login correcto/incorrecto, sesión, callbackUrl externo ignorado).
 - 2026-10-26: Remoto GitHub configurado; Fase 1 subida en rama `chore/phase-1-setup`. Rama `feat/database`: `.env` local + migración `init` aplicada (tablas User, Task).
