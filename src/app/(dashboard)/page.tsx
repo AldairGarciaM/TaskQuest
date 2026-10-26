@@ -1,4 +1,3 @@
-import DashboardLayout from "../components/layout/DashboardLayout";
 import XpHeroCard from "@/components/dashboard/xpHeroCard";
 
 import {
@@ -19,7 +18,7 @@ export default async function HomePage() {
   const userName = user.name ?? "aventurero";
 
   return (
-    <DashboardLayout userName={userName}>
+    <>
 
       <div className = "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>
@@ -69,6 +68,6 @@ export default async function HomePage() {
 
       </div>
       
-    </DashboardLayout>
+    </>
   );
 }
