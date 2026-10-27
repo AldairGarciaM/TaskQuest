@@ -50,3 +50,8 @@ export function canLeave(actor: OrgRole): boolean {
 export function canDeleteOrganization(actor: OrgRole): boolean {
   return actor === "OWNER";
 }
+
+/** Owners and admins create, assign, edit, delete and reopen board tasks. */
+export function canManageTasks(actor: OrgRole): boolean {
+  return actor === "OWNER" || actor === "ADMIN";
+}

@@ -38,7 +38,11 @@ src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
-src/app/(dashboard)/organizaciones/[slug]/page.tsx  detalle: miembros, invitar, pendientes, salir/eliminar (no miembro → redirect a la lista)
+src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
+src/app/(dashboard)/organizaciones/[slug]/organization.ts loadOrganization(slug) con cache(); no miembro → redirect a la lista
+src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del equipo + ranking
+src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  miembros, invitar, pendientes, salir/eliminar
+src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, completeOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
@@ -56,6 +60,9 @@ src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropd
 src/components/layout/      DashboardLayout (prop userName), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
+src/components/org-board/   OrgBoard (filtros Pendientes/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Completar + menú),
+                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking
+src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
 src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real)
@@ -70,11 +77,12 @@ src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /a
 src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
 src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profileSchema, registerSchema, usernameSchema
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
-src/lib/validations/task.ts taskInputSchema, taskIdSchema
+src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
+src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org
 src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug
@@ -82,7 +90,7 @@ src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchem
 src/lib/mail.ts             nodemailer; sin SMTP_HOST solo hace console.info del enlace
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
 src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
-src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements (Prisma)
+src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements, addUserXp (Prisma)
 src/types/next-auth.d.ts    agrega id, username y firstName a Session.user / JWT
 src/generated/prisma/       cliente Prisma generado (gitignored, no editar)
 prisma/schema.prisma        User, Task, enums Difficulty/TaskStatus
@@ -120,7 +128,8 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
-| `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros |
+| `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking |
+| `/organizaciones/[slug]/miembros` | `src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx` | Protegida; solo miembros |
 | `/invitaciones/[token]` | `src/app/invitaciones/[token]/page.tsx` | Pública (el proxy la deja pasar sin sesión) |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
@@ -142,6 +151,13 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones; "Pronto": Calendario
 | `changeMemberRole(orgId, userId, role)` | idem | Solo OWNER; entre ADMIN y MEMBER |
 | `removeMember(orgId, userId)` | idem | OWNER quita ADMIN/MEMBER; ADMIN quita MEMBER; nadie quita al dueño ni a sí mismo |
 | `leaveOrganization(orgId)` / `deleteOrganization(orgId)` | idem | Salir (no el dueño) / eliminar (solo dueño, cascada) |
+| `createOrgTask(orgId, input)` | `src/app/actions/org-tasks.ts` | OWNER/ADMIN. `assigneeId` vacío = libre; si viene, debe ser miembro. XP según dificultad (servidor) |
+| `updateOrgTask(id, input)` | idem | OWNER/ADMIN; solo pendientes (completada → reabrir primero). Puede reasignar o liberar |
+| `deleteOrgTask(id)` | idem | OWNER/ADMIN; la XP ya pagada se conserva |
+| `claimOrgTask(id)` | idem | Cualquier miembro toma una libre (update condicional: solo uno gana) → selfAssigned |
+| `releaseOrgTask(id)` | idem | Solo quien la tomó por su cuenta; las asignadas por un jefe no se sueltan |
+| `completeOrgTask(id)` | idem | Solo el responsable. Paga xpReward a su XP personal una vez (awardedXp), recalcula nivel, desbloquea logros |
+| `reopenOrgTask(id)` | idem | OWNER/ADMIN. Vuelve a pendiente con el mismo responsable y descuenta awardedXp a quien la completó |
 | `acceptInvitation(token)` | `src/app/actions/invitations.ts` | Requiere sesión; el correo de la BD debe ser el invitado. Marca usada con update condicional (un solo uso aunque haya peticiones en paralelo) |
 | `acceptInvitationWithSignup(token, profile)` | idem | Sin sesión: crea cuenta con el correo invitado + membresía en una transacción; el cliente hace signIn después |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName |
@@ -150,7 +166,7 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
@@ -160,6 +176,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 
 | Organization | id, name, slug (unique) | |
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
+| OrgTask | id, title, description?, difficulty, xpReward, status, dueDate?, selfAssigned, completedAt?, awardedXp, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
 Enums: `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
@@ -211,13 +228,20 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Invitaciones: solo se guarda el hash del token; aceptar exige que el correo de la cuenta (leído de la BD) sea el invitado. Sin SMTP el admin copia el enlace. La invitación a una cuenta nueva crea usuario + membresía en la misma transacción.
 - 2026-10-27: `/organizaciones/[slug]` de la que no eres miembro redirige a la lista (no revela si existe).
 
+- 2026-10-27: Tablero: OWNER y ADMIN crean/asignan/editan/reabren/eliminan tareas (el usuario pidió "el dueño"; se incluyó admin como delegado). Tarea con responsable = específica; sin responsable = cualquiera la toma.
+- 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
+- 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
+- 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
 - [x] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer; sin SMTP → consola + copiar enlace), página para aceptar invitación.
 - [ ] Transferir la propiedad de una organización.
 - [ ] Límite de invitaciones por hora (hoy solo hay tope de 10 organizaciones por dueño).
-- [ ] Tablero de la organización: asignar o dejar libre, tomar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
+- [x] Tablero de la organización: asignar o dejar libre, tomar/soltar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
+- [ ] Ranking semanal/mensual (hoy es histórico).
+- [ ] Decidir si las tareas de organización cuentan para misiones diarias y racha.
 
 Prioridad 1 — entorno
 - [x] Build roto en `TaskCard.tsx` (import inexistente) y lógica de dificultad duplicada.
@@ -252,6 +276,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-27: Rama `feat/org-board` (sobre `feat/organizations`): modelo OrgTask, tablero con tareas asignadas o libres, tomar/soltar/completar/reabrir, ranking, pestañas Tablero/Miembros. 137 pruebas pasan, build OK.
 - 2026-10-27: Rama `feat/organizations`: modelos Organization/Membership/Invitation, roles, invitaciones con enlace de un solo uso, páginas /organizaciones, /organizaciones/[slug] e /invitaciones/[token], AuthShell extraído. 118 pruebas pasan, build OK.
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
 - 2026-10-26: Rama `feat/user-profile`: firstName/lastName/username, login con correo o usuario, migración con backfill. 86 pruebas pasan. Usuario demo: `demo` / `demo@taskquest.local`.

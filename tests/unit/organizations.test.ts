@@ -5,6 +5,7 @@ import {
   canDeleteOrganization,
   canInvite,
   canLeave,
+  canManageTasks,
   canRemoveMember,
   invitableRoles,
 } from "@/lib/organizations/permissions";
@@ -39,6 +40,12 @@ describe("permissions", () => {
     expect(canChangeRole("OWNER", "MEMBER", "OWNER")).toBe(false);
     expect(canChangeRole("OWNER", "MEMBER", "MEMBER")).toBe(false);
     expect(canChangeRole("ADMIN", "MEMBER", "ADMIN")).toBe(false);
+  });
+
+  it("lets owners and admins manage board tasks", () => {
+    expect(canManageTasks("OWNER")).toBe(true);
+    expect(canManageTasks("ADMIN")).toBe(true);
+    expect(canManageTasks("MEMBER")).toBe(false);
   });
 
   it("keeps the owner in until the organization is deleted", () => {

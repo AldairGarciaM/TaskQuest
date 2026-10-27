@@ -29,3 +29,15 @@ export const taskInputSchema = z.object({
 
 export type TaskInput = z.input<typeof taskInputSchema>;
 export type TaskFieldErrors = Partial<Record<keyof TaskInput, string[]>>;
+
+/** Board task: same fields plus an optional assignee (empty = anyone can take it). */
+export const orgTaskInputSchema = taskInputSchema.extend({
+  assigneeId: z
+    .string()
+    .max(64)
+    .optional()
+    .transform((value) => value || undefined),
+});
+
+export type OrgTaskInput = z.input<typeof orgTaskInputSchema>;
+export type OrgTaskFieldErrors = Partial<Record<keyof OrgTaskInput, string[]>>;

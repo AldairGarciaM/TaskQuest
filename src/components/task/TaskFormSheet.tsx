@@ -112,7 +112,7 @@ function TaskForm({ task, onDone }: { task: TaskDTO | null; onDone: () => void }
           error={fieldErrors.title?.[0]}
         />
 
-        <TextArea
+        <DescriptionField
           defaultValue={task?.description ?? ""}
           error={fieldErrors.description?.[0]}
         />
@@ -153,7 +153,7 @@ function TaskForm({ task, onDone }: { task: TaskDTO | null; onDone: () => void }
   );
 }
 
-function TextArea({ defaultValue, error }: { defaultValue: string; error?: string }) {
+export function DescriptionField({ defaultValue, error }: { defaultValue: string; error?: string }) {
   return (
     <div className="space-y-2">
       <label htmlFor="task-description" className="block text-sm font-medium text-slate-300">

@@ -50,6 +50,17 @@ async function roleIn(organizationId: string, userId: string) {
   return membership?.role ?? null;
 }
 
+/** Ends a membership and puts that person's pending board tasks back in the open pool. */
+async function removeMembership(organizationId: string, userId: string) {
+  await prisma.$transaction([
+    prisma.orgTask.updateMany({
+      where: { organizationId, assigneeId: userId, status: "PENDING" },
+      data: { assigneeId: null, selfAssigned: false },
+    }),
+    prisma.membership.deleteMany({ where: { organizationId, userId } }),
+  ]);
+}
+
 export async function createOrganization(
   input: unknown,
 ): Promise<Result<{ slug: string }, OrganizationFieldErrors>> {
@@ -188,7 +199,7 @@ export async function removeMember(organizationId: unknown, userId: unknown): Pr
   if (!actor || !target) return NOT_FOUND;
   if (!canRemoveMember(actor, target)) return FORBIDDEN;
 
-  await prisma.membership.deleteMany({ where: { organizationId: orgId.data, userId: targetId.data } });
+  await removeMembership(orgId.data, targetId.data);
   revalidateOrganizations();
   return { ok: true };
 }
@@ -202,7 +213,7 @@ export async function leaveOrganization(organizationId: unknown): Promise<Result
   if (!actor) return NOT_FOUND;
   if (!canLeave(actor)) return { ok: false, error: "El dueño no puede salir; elimina la organización." };
 
-  await prisma.membership.deleteMany({ where: { organizationId: orgId.data, userId: user.id } });
+  await removeMembership(orgId.data, user.id);
   revalidateOrganizations();
   return { ok: true };
 }

@@ -50,6 +50,10 @@ model User {
   achievements  UserAchievement[]
   memberships   Membership[]
   invitations   Invitation[]
+
+  assignedOrgTasks  OrgTask[] @relation("OrgTaskAssignee")
+  createdOrgTasks   OrgTask[] @relation("OrgTaskCreator")
+  completedOrgTasks OrgTask[] @relation("OrgTaskCompleter")
 }
 
 model Task {
@@ -110,6 +114,7 @@ model Organization {
 
   members     Membership[]
   invitations Invitation[]
+  tasks       OrgTask[]
 }
 
 /// Exactly one OWNER per organization (the creator).
@@ -144,4 +149,35 @@ model Invitation {
   invitedBy      User?        @relation(fields: [invitedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, email])
+}
+
+/// A task on an organization board. No assignee = any member can take it.
+/// Completing it pays XP to the assignee's personal level; a manager reopening it takes that XP back.
+model OrgTask {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  difficulty  Difficulty @default(EASY)
+  xpReward    Int
+  status      TaskStatus @default(PENDING)
+  dueDate     DateTime?
+  /// True when the assignee took it from the open pool (they may give it back).
+  selfAssigned Boolean   @default(false)
+  completedAt DateTime?
+  /// XP actually paid on completion, so reopening reverses exactly that.
+  awardedXp   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assigneeId     String?
+  assignee       User?        @relation("OrgTaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById    String?
+  createdBy      User?        @relation("OrgTaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  completedById  String?
+  completedBy    User?        @relation("OrgTaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([assigneeId])
 }

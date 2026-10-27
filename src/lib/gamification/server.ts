@@ -2,6 +2,7 @@ import type { DailyMissionType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { currentStreak, dayKey, dueDateToInput } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
+import { levelFromXp } from "@/lib/xp";
 
 import { newlyUnlocked } from "./achievements";
 import { DAILY_CATALOG, dailyProgress, pickDailyTypes, type CompletionToday } from "./daily";
@@ -147,4 +148,18 @@ export async function unlockAchievements(db: Db, userId: string, level: number, 
     });
   }
   return keys;
+}
+
+/** Adds (or with a negative delta, takes back) XP, never below 0, and recomputes the level. */
+export async function addUserXp(db: Db, userId: string, delta: number) {
+  const before = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { level: true } });
+  const { xp } = await db.user.update({
+    where: { id: userId },
+    data: { xp: { increment: delta } },
+    select: { xp: true },
+  });
+  const safeXp = Math.max(0, xp);
+  const level = levelFromXp(safeXp);
+  await db.user.update({ where: { id: userId }, data: { xp: safeXp, level } });
+  return { xp: safeXp, level, leveledUp: level > before.level };
 }
