@@ -1,5 +1,5 @@
 # PROJECT_MAP — TaskQuest
-_Última actualización: 2026-10-26_
+_Última actualización: 2026-10-27_
 
 ## Qué es
 Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logros, rachas). Proyecto de portafolio.
@@ -7,7 +7,7 @@ Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logr
 ## Stack
 Next.js 16.2.9 full-stack (App Router, React Compiler activo) · React 19.2.4 · TypeScript `strict` ·
 Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI, iconos Phosphor) + Lucide en componentes propios ·
-Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · Motion (`motion/react`) · Sonner · PostgreSQL (local).
+Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · nodemailer 10 · Motion (`motion/react`) · Sonner · PostgreSQL (local).
 Tests: Vitest 3 (Vitest 5 exige Node 22; aquí se usa Node 20.19).
 
 > Excepción al stack base global: NO hay `frontend/` + `backend/` Laravel. Todo vive en Next.js (decisión del usuario, 2026-10-23).
@@ -21,7 +21,7 @@ Tests: Vitest 3 (Vitest 5 exige Node 22; aquí se usa Node 20.19).
 | `pnpm lint` | ESLint |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm db:generate` | Regenera el cliente Prisma en `src/generated/prisma` |
-| `pnpm db:migrate` | `prisma migrate dev` (requiere `.env` con `DATABASE_URL`) |
+| `pnpm db:migrate` | `prisma migrate dev` (requiere `.env` con `DATABASE_URL`). Prisma 7 NO regenera el cliente: correr `pnpm db:generate` después |
 | `pnpm db:studio` | Prisma Studio |
 | `pnpm test` | Todas las pruebas (unit + integration) |
 | `pnpm test:unit` / `pnpm test:integration` | Solo un proyecto de Vitest |
@@ -37,18 +37,26 @@ src/app/(dashboard)/page.tsx     dashboard "/": stats, XP/nivel y misiones reale
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
+src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
+src/app/(dashboard)/organizaciones/[slug]/page.tsx  detalle: miembros, invitar, pendientes, salir/eliminar (no miembro → redirect a la lista)
+src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
+src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization
+src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
-src/app/auth/layout.tsx     layout de login/registro (panel de marca a la izquierda en lg)
+src/app/auth/layout.tsx     layout de login/registro → usa AuthShell
 src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl, muestra ?registered=1)
 src/app/auth/register/page.tsx  /auth/register
 src/app/auth/actions.ts     Server Action registerUser (zod + bcrypt cost 12, P2002 → email duplicado)
 src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
 src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
-src/components/auth/        LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
+src/components/auth/        AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (prop userName), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
+src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace),
+                            MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
+src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
 src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real)
 src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar),
@@ -67,6 +75,11 @@ src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProg
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
+src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId), findInvitationByToken
+src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
+src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug
+src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchema, invitationTokenSchema, idSchema
+src/lib/mail.ts             nodemailer; sin SMTP_HOST solo hace console.info del enlace
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
 src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
 src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements (Prisma)
@@ -78,7 +91,7 @@ prisma/seed.ts              VACÍO
 prisma.config.ts            config Prisma 7 (schema, migrations, datasource url)
 .env.example                variables requeridas (sin valores reales)
 vitest.config.mts           proyectos "unit" e "integration" (integration en un solo fork)
-tests/unit/                 xp, dates, validations, safe-redirect (lógica pura)
+tests/unit/                 xp, dates, validations, safe-redirect, gamification, organizations (lógica pura)
 tests/integration/          Server Actions y login contra la BD `<db>_test`
   global-setup.ts           crea la BD de prueba y aplica `prisma migrate deploy`
   setup.ts                  apunta DATABASE_URL a la BD de prueba, mockea next/cache y @/lib/session, TRUNCATE antes de cada test
@@ -98,18 +111,22 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | Usuario actual en servidor | `const user = await requireUser()` de `@/lib/session` |
 | Esquema de BD | `prisma/schema.prisma` |
 | Cliente de BD | `import { prisma } from "@/lib/prisma"` |
-| Server Actions / Route Handlers | `src/app/actions/tasks.ts`, `src/app/auth/actions.ts`, `src/app/api/auth/[...nextauth]/route.ts` |
+| Permisos de organización | `src/lib/organizations/permissions.ts` (UI y Server Actions usan las mismas funciones) |
+| Server Actions / Route Handlers | `src/app/actions/tasks.ts`, `src/app/actions/organizations.ts`, `src/app/actions/invitations.ts`, `src/app/auth/actions.ts`, `src/app/api/auth/[...nextauth]/route.ts` |
 
 ## Rutas
 | Ruta | Archivo | Estado |
 |---|---|---|
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
+| `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
+| `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros |
+| `/invitaciones/[token]` | `src/app/invitaciones/[token]/page.tsx` | Pública (el proxy la deja pasar sin sesión) |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
-Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Historial.
+Menú lateral: Dashboard, Misiones, Logros, Organizaciones; "Pronto": Calendario, Estadísticas, Historial. Las subrutas resaltan su sección.
 
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
@@ -119,13 +136,21 @@ Menú lateral (sin página): Misiones, Logros, Calendario, Estadísticas, Histor
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
+| `createOrganization(input)` | `src/app/actions/organizations.ts` | Crea org + membresía OWNER; slug con sufijo aleatorio (reintenta en P2002); máx. 10 como dueño |
+| `inviteMember(orgId, {email, role})` | idem | OWNER invita ADMIN/MEMBER, ADMIN solo MEMBER. Rechaza si ya es miembro. Reemplaza la pendiente del mismo correo. Devuelve `{ url, emailed }` |
+| `revokeInvitation(id)` | idem | Borra la invitación pendiente (puede revocar quien podría haberla enviado) |
+| `changeMemberRole(orgId, userId, role)` | idem | Solo OWNER; entre ADMIN y MEMBER |
+| `removeMember(orgId, userId)` | idem | OWNER quita ADMIN/MEMBER; ADMIN quita MEMBER; nadie quita al dueño ni a sí mismo |
+| `leaveOrganization(orgId)` / `deleteOrganization(orgId)` | idem | Salir (no el dueño) / eliminar (solo dueño, cascada) |
+| `acceptInvitation(token)` | `src/app/actions/invitations.ts` | Requiere sesión; el correo de la BD debe ser el invitado. Marca usada con update condicional (un solo uso aunque haya peticiones en paralelo) |
+| `acceptInvitationWithSignup(token, profile)` | idem | Sin sesión: crea cuenta con el correo invitado + membresía en una transacción; el cliente hace signIn después |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName |
 
 Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista. Todas las consultas de Task filtran por `userId` del usuario de la sesión. Las acciones devuelven `{ ok: true, ... } | { ok: false, error?, fieldErrors? }`.
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email).
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
@@ -133,7 +158,11 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | DailyMission | id, day ("YYYY-MM-DD" en APP_TIME_ZONE), type, target, xpReward, rewardedAt?, userId | Único (userId, day, type). El progreso NO se guarda: se calcula de las tareas completadas ese día |
 | UserAchievement | id, key, unlockedAt, userId | Único (userId, key). Definiciones en código |
 
-Enums: `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
+| Organization | id, name, slug (unique) | |
+| Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
+| Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
+
+Enums: `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
@@ -146,6 +175,8 @@ Plantilla en `.env.example` (copiar a `.env`):
 - `DATABASE_URL` — conexión PostgreSQL
 - `NEXTAUTH_URL` — URL base de la app
 - `NEXTAUTH_SECRET` — secreto de sesión
+- `SMTP_HOST`, `SMTP_PORT` (587; 465 = TLS), `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` — opcionales; sin `SMTP_HOST` el enlace de invitación va a consola y se muestra en la UI para copiarlo.
+- `NEXTAUTH_URL` también arma los enlaces de invitación.
 - `TEST_DATABASE_URL` — opcional; si falta, las pruebas usan `DATABASE_URL` con sufijo `_test`. El nombre debe terminar en `_test` o las pruebas se niegan a correr.
 
 ## Convenciones
@@ -175,10 +206,17 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-26: Pruebas de integración contra PostgreSQL real (no mocks de Prisma) en una BD aparte; se mockean solo `requireUser` y `revalidatePath`.
 - 2026-10-26: Formularios de auth con estilos propios slate/violeta (los shadcn base-lyra son h-8 text-xs, demasiado pequeños). Entrada con `starting:` de Tailwind (sin Motion aún).
 
+- 2026-10-27: `main` fusionado (fast-forward) hasta `feat/user-profile` con permiso del usuario.
+- 2026-10-27: Organizaciones: un solo dueño (el creador), sin transferencia por ahora. Permisos en funciones puras compartidas por UI y servidor.
+- 2026-10-27: Invitaciones: solo se guarda el hash del token; aceptar exige que el correo de la cuenta (leído de la BD) sea el invitado. Sin SMTP el admin copia el enlace. La invitación a una cuenta nueva crea usuario + membresía en la misma transacción.
+- 2026-10-27: `/organizaciones/[slug]` de la que no eres miembro redirige a la lista (no revela si existe).
+
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
-- [ ] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer SMTP; sin SMTP → consola + copiar enlace), página para aceptar invitación (pide nombre, apellidos, usuario, contraseña).
+- [x] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer; sin SMTP → consola + copiar enlace), página para aceptar invitación.
+- [ ] Transferir la propiedad de una organización.
+- [ ] Límite de invitaciones por hora (hoy solo hay tope de 10 organizaciones por dueño).
 - [ ] Tablero de la organización: asignar o dejar libre, tomar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
 
 Prioridad 1 — entorno
@@ -214,6 +252,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-27: Rama `feat/organizations`: modelos Organization/Membership/Invitation, roles, invitaciones con enlace de un solo uso, páginas /organizaciones, /organizaciones/[slug] e /invitaciones/[token], AuthShell extraído. 118 pruebas pasan, build OK.
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.
 - 2026-10-26: Rama `feat/user-profile`: firstName/lastName/username, login con correo o usuario, migración con backfill. 86 pruebas pasan. Usuario demo: `demo` / `demo@taskquest.local`.
 - 2026-10-26: Rama `feat/daily-missions-achievements`: migración, misiones diarias, logros, página /logros, sidebar con navegación. 81 pruebas pasan; smoke test con usuario demo.

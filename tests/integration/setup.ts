@@ -23,8 +23,8 @@ beforeEach(async () => {
   const { prisma } = await import("@/lib/prisma");
   const { signOut } = await import("./helpers");
   signOut();
-  // Cascades to every table that references User.
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "User" CASCADE');
+  // Cascades to every table that references User or Organization.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "User", "Organization" CASCADE');
 });
 
 afterAll(async () => {

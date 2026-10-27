@@ -7,6 +7,7 @@ import {
   Calendar,
   BarChart3,
   History,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,6 +29,11 @@ const menuItems = [
     label: "Logros",
     icon: Trophy,
     href: "/logros",
+  },
+  {
+    label: "Organizaciones",
+    icon: Users,
+    href: "/organizaciones",
   },
   {
     label: "Calendario",
@@ -73,7 +79,8 @@ export default function AppSidebar() {
               );
             }
 
-            const active = item.href === pathname;
+            // Nested pages (e.g. /organizaciones/[slug]) keep their section highlighted.
+            const active = item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
             return (
               <li key={item.label}>
                 <Link

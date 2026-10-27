@@ -7,6 +7,9 @@ export async function proxy(request: NextRequest) {
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   const isAuthRoute = pathname === "/auth" || pathname.startsWith("/auth/");
 
+  // Invitation links work signed in or out; the page decides what to show.
+  if (pathname.startsWith("/invitaciones/")) return NextResponse.next();
+
   if (isAuthRoute) {
     return token ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
   }

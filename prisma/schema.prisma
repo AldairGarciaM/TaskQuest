@@ -19,6 +19,12 @@ enum TaskStatus {
   COMPLETED
 }
 
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
 enum DailyMissionType {
   COMPLETE_TASKS
   COMPLETE_HARD
@@ -42,6 +48,8 @@ model User {
   tasks         Task[]
   dailyMissions DailyMission[]
   achievements  UserAchievement[]
+  memberships   Membership[]
+  invitations   Invitation[]
 }
 
 model Task {
@@ -90,4 +98,50 @@ model UserAchievement {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, key])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  /// URL id: slugified name plus a random suffix.
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     Membership[]
+  invitations Invitation[]
+}
+
+/// Exactly one OWNER per organization (the creator).
+model Membership {
+  id        String   @id @default(cuid())
+  role      OrgRole  @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+/// Only the SHA-256 of the link token is stored. Revoking deletes the row.
+model Invitation {
+  id         String    @id @default(cuid())
+  /// Lowercase. Only an account with this email can accept.
+  email      String
+  role       OrgRole   @default(MEMBER)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedById    String?
+  invitedBy      User?        @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, email])
 }
