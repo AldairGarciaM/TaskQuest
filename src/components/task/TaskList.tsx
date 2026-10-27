@@ -119,7 +119,7 @@ export default function TaskList({ tasks }: { tasks: TaskDTO[] }) {
     <section aria-labelledby="missions-heading" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 id="missions-heading" className="text-xl font-bold">
-          Misiones
+          Misiones personales
         </h2>
 
         <div className="flex items-center gap-3">

@@ -40,6 +40,8 @@ const GENERIC_ERROR = { ok: false, error: "Algo salió mal. Intenta de nuevo." }
 
 function revalidateOrganizations() {
   revalidatePath("/organizaciones", "layout");
+  // The dashboard lists tasks of my organizations.
+  revalidatePath("/");
 }
 
 async function roleIn(organizationId: string, userId: string) {

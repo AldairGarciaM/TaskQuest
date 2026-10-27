@@ -35,7 +35,7 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
 src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser()
-src/app/(dashboard)/page.tsx     dashboard "/": stats, XP/nivel y misiones reales (getDashboardData)
+src/app/(dashboard)/page.tsx     dashboard "/": stats, XP/nivel, misiones diarias, "Misiones personales" (TaskList) y "Tareas de organizaciones" (OrgTasksSection)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
@@ -63,11 +63,11 @@ src/components/layout/      DashboardLayout (prop userName), AppSidebar (client:
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
 src/components/org-board/   OrgBoard (filtros Pendientes/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Completar + menú),
-                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking
+                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking, useOrgTaskActions (tomar/soltar/completar + toasts; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
-src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real)
+src/components/dashboard/   StatsCard, xpHeroCard (nivel/progreso desde xp real), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
 src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar),
                             TaskFormSheet (crear/editar en Sheet), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
 src/components/form/        FormField (input con label/error accesible; usado en auth y misiones)
@@ -84,7 +84,7 @@ src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProg
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
-src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org
+src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100)
 src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug
@@ -235,6 +235,8 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
 
+- 2026-10-27: Dashboard separa "Misiones personales" y "Tareas de organizaciones". La sección de equipo solo muestra pendientes mías o libres (no las de otros ni completadas) y solo permite Tomar/Soltar/Completar; gestionar (crear, editar, reabrir, eliminar) se hace en el tablero. Las acciones de organizaciones, tareas de equipo e invitaciones también revalidan "/".
+
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
@@ -278,6 +280,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-27: Rama `feat/dashboard-org-tasks` (sobre `feat/org-board`): sección "Tareas de organizaciones" en el dashboard, hook useOrgTaskActions compartido.
 - 2026-10-27: Rama `feat/org-board` (sobre `feat/organizations`): modelo OrgTask, tablero con tareas asignadas o libres, tomar/soltar/completar/reabrir, ranking, pestañas Tablero/Miembros. 137 pruebas pasan, build OK.
 - 2026-10-27: Rama `feat/organizations`: modelos Organization/Membership/Invitation, roles, invitaciones con enlace de un solo uso, páginas /organizaciones, /organizaciones/[slug] e /invitaciones/[token], AuthShell extraído. 118 pruebas pasan, build OK.
 - 2026-10-23: Auditoría inicial del proyecto retomado y creación de este mapa.

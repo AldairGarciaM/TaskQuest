@@ -2,23 +2,17 @@
 
 import { ClipboardList, Plus } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import {
-  claimOrgTask,
-  completeOrgTask,
-  deleteOrgTask,
-  releaseOrgTask,
-  reopenOrgTask,
-} from "@/app/actions/org-tasks";
+import { deleteOrgTask, reopenOrgTask } from "@/app/actions/org-tasks";
 import ConfirmDialog from "@/components/organization/ConfirmDialog";
 import type { BoardPerson, OrgTaskDTO } from "@/lib/data/org-board";
-import { ACHIEVEMENTS_BY_KEY } from "@/lib/gamification/achievements";
 import { cn } from "@/lib/utils";
 
 import OrgTaskCard, { type OrgTaskAction } from "./OrgTaskCard";
 import OrgTaskFormSheet from "./OrgTaskFormSheet";
+import { useOrgTaskActions } from "./useOrgTaskActions";
 
 type Filter = "pending" | "open" | "mine" | "completed";
 
@@ -41,7 +35,7 @@ interface OrgBoardProps {
 
 export default function OrgBoard({ organizationId, myUserId, canManage, tasks, members }: OrgBoardProps) {
   const reduceMotion = useReducedMotion();
-  const [pending, startTransition] = useTransition();
+  const { pending, run, claim, release, complete } = useOrgTaskActions();
   const [filter, setFilter] = useState<Filter>("pending");
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -69,41 +63,14 @@ export default function OrgBoard({ organizationId, myUserId, canManage, tasks, m
     setFormOpen(true);
   }
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>, success: () => void) {
-    startTransition(async () => {
-      const result = await action();
-      if (!result.ok) {
-        toast.error(result.error ?? "Algo salió mal. Intenta de nuevo.");
-        return;
-      }
-      success();
-    });
-  }
-
-  function handleComplete(task: OrgTaskDTO) {
-    startTransition(async () => {
-      const result = await completeOrgTask(task.id);
-      if (!result.ok) {
-        toast.error(result.error ?? "No pudimos completar la tarea.");
-        return;
-      }
-      toast.success(`+${result.xpDelta} XP`, { description: `Completaste “${task.title}”` });
-      for (const key of result.achievements) {
-        const achievement = ACHIEVEMENTS_BY_KEY.get(key);
-        if (achievement) toast(`Logro desbloqueado: ${achievement.title}`, { description: achievement.description });
-      }
-      if (result.leveledUp) toast(`¡Subiste a nivel ${result.level}!`);
-    });
-  }
-
   function handleAction(action: OrgTaskAction, task: OrgTaskDTO) {
     switch (action) {
       case "claim":
-        return run(() => claimOrgTask(task.id), () => toast.success("Tarea tomada", { description: task.title }));
+        return claim(task);
       case "release":
-        return run(() => releaseOrgTask(task.id), () => toast("Tarea liberada", { description: task.title }));
+        return release(task);
       case "complete":
-        return handleComplete(task);
+        return complete(task);
       case "edit":
         return openForm(task);
       case "reopen":

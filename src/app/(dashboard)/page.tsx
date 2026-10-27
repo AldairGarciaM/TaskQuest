@@ -7,15 +7,17 @@ import {
   Trophy
 } from "lucide-react";
 
+import OrgTasksSection from "@/components/dashboard/OrgTasksSection";
 import StatsCard from "@/components/dashboard/StatsCard";
 import DailyMissionsCard from "@/components/gamification/DailyMissionsCard";
 import TaskList from "@/components/task/TaskList";
 import { getDashboardData } from "@/lib/data/dashboard";
+import { getMyOrgTasks } from "@/lib/data/org-board";
 import { requireUser } from "@/lib/session";
 
 export default async function HomePage() {
   const user = await requireUser();
-  const data = await getDashboardData(user.id);
+  const [data, orgTaskGroups] = await Promise.all([getDashboardData(user.id), getMyOrgTasks(user.id)]);
   const userName = user.name || "aventurero";
 
   return (
@@ -68,6 +70,8 @@ export default async function HomePage() {
         <DailyMissionsCard missions={data.dailyMissions} />
         
         <TaskList tasks={data.tasks} />
+
+        <OrgTasksSection groups={orgTaskGroups} myUserId={user.id} />
 
       </div>
       

@@ -19,8 +19,10 @@ const FORBIDDEN: Failure = { ok: false, error: "No tienes permiso para hacer eso
 const GENERIC_ERROR: Failure = { ok: false, error: "Algo salió mal. Intenta de nuevo." };
 const NOT_A_MEMBER: OrgTaskFieldErrors = { assigneeId: ["Esa persona no es miembro de la organización"] };
 
+/** The board and the dashboard (which lists my tasks and the open ones). */
 function revalidateBoard() {
   revalidatePath("/organizaciones", "layout");
+  revalidatePath("/");
 }
 
 async function roleIn(organizationId: string, userId: string) {
@@ -195,7 +197,6 @@ export async function completeOrgTask(taskId: unknown): Promise<Result<OrgComple
     if (!outcome) return { ok: false, error: "Esta tarea ya no está pendiente." };
 
     revalidateBoard();
-    revalidatePath("/");
     return { ok: true, ...outcome };
   } catch (error) {
     console.error("completeOrgTask failed", error);
