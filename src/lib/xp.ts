@@ -48,11 +48,21 @@ export function levelProgress(xp: number): LevelProgress {
   };
 }
 
+/** Title earned at each level, highest first. */
+const LEVEL_TITLES: { level: number; title: string }[] = [
+  { level: 20, title: "Leyenda" },
+  { level: 15, title: "Héroe" },
+  { level: 10, title: "Veterano" },
+  { level: 5, title: "Aventurero" },
+  { level: 3, title: "Aprendiz" },
+  { level: 1, title: "Novato" },
+];
+
 export function levelTitle(level: number): string {
-  if (level >= 20) return "Leyenda";
-  if (level >= 15) return "Héroe";
-  if (level >= 10) return "Veterano";
-  if (level >= 5) return "Aventurero";
-  if (level >= 3) return "Aprendiz";
-  return "Novato";
+  return LEVEL_TITLES.find((t) => level >= t.level)!.title;
+}
+
+/** The next title to unlock and the level it takes; null once the highest title is reached. */
+export function nextLevelTitle(level: number): { level: number; title: string } | null {
+  return LEVEL_TITLES.findLast((t) => t.level > level) ?? null;
 }

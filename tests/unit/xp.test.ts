@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { levelFromXp, levelProgress, levelTitle, XP_BY_DIFFICULTY, xpForLevel } from "@/lib/xp";
+import { levelFromXp, levelProgress, levelTitle, nextLevelTitle, XP_BY_DIFFICULTY, xpForLevel } from "@/lib/xp";
 
 describe("xpForLevel", () => {
   it("each level costs 100 XP more than the previous one", () => {
@@ -69,4 +69,25 @@ it("harder difficulties reward more XP", () => {
   expect(EASY).toBeLessThan(MEDIUM);
   expect(MEDIUM).toBeLessThan(HARD);
   expect(HARD).toBeLessThan(EPIC);
+});
+
+describe("levelTitle / nextLevelTitle", () => {
+  it("names each level band and points to the next one", () => {
+    expect([1, 2, 3, 4, 5, 9, 10, 15, 20, 40].map(levelTitle)).toEqual([
+      "Novato",
+      "Novato",
+      "Aprendiz",
+      "Aprendiz",
+      "Aventurero",
+      "Aventurero",
+      "Veterano",
+      "Héroe",
+      "Leyenda",
+      "Leyenda",
+    ]);
+    expect(nextLevelTitle(1)).toEqual({ level: 3, title: "Aprendiz" });
+    expect(nextLevelTitle(4)).toEqual({ level: 5, title: "Aventurero" });
+    expect(nextLevelTitle(19)).toEqual({ level: 20, title: "Leyenda" });
+    expect(nextLevelTitle(20)).toBeNull();
+  });
 });

@@ -7,30 +7,27 @@ export default function DashboardLoading() {
     <div role="status" aria-live="polite">
       <span className="sr-only">Cargando tu progreso…</span>
 
-      <div aria-hidden className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-6">
-            <Block className="size-8" />
-            <Block className="h-3 w-20" />
-            <Block className="h-8 w-16" />
-            <Block className="h-3 w-40" />
-          </div>
-        ))}
-      </div>
-
-      <div aria-hidden className="mt-8 space-y-8">
-        <div className="grid items-center gap-8 rounded-xl border border-slate-800 bg-slate-900/80 p-8 md:grid-cols-3">
-          <div className="space-y-6 md:col-span-2">
-            <Block className="size-12" />
-            <div className="space-y-2">
-              <Block className="h-9 w-32" />
-              <Block className="h-4 w-24" />
+      <div aria-hidden className="space-y-8">
+        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+          <div className="flex flex-col gap-8 p-6 sm:flex-row sm:items-center sm:p-8">
+            <Block className="mx-auto size-36 shrink-0 rounded-full sm:mx-0" />
+            <div className="flex-1 space-y-5">
+              <div className="space-y-2">
+                <Block className="h-4 w-24" />
+                <Block className="h-9 w-56" />
+              </div>
+              <Block className="h-2.5 w-full rounded-full" />
+              <Block className="h-4 w-64" />
             </div>
-            <Block className="h-3 w-full rounded-full" />
-            <Block className="h-3 w-56" />
           </div>
-          <div className="flex justify-center">
-            <Block className="size-36 rounded-full" />
+          <div className="grid grid-cols-2 gap-px border-t border-slate-800 bg-slate-800 lg:grid-cols-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i} className="space-y-3 bg-slate-900 p-5">
+                <Block className="h-4 w-24" />
+                <Block className="h-7 w-14" />
+                <Block className="h-3 w-36" />
+              </div>
+            ))}
           </div>
         </div>
 
