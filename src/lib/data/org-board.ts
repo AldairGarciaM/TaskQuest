@@ -1,7 +1,8 @@
 import type { Prisma } from "@/generated/prisma/client";
-import type { Difficulty, TaskStatus } from "@/generated/prisma/enums";
+import type { Difficulty, OrgRole, OrgTaskStatus } from "@/generated/prisma/enums";
 import { dueDateToInput } from "@/lib/dates";
 import type { MemberDTO } from "@/lib/data/organizations";
+import { canManageTasks } from "@/lib/organizations/permissions";
 import { prisma } from "@/lib/prisma";
 
 export interface BoardPerson {
@@ -17,9 +18,13 @@ export interface OrgTaskDTO {
   description: string | null;
   difficulty: Difficulty;
   xpReward: number;
-  status: TaskStatus;
+  status: OrgTaskStatus;
   /** "YYYY-MM-DD" for <input type="date">. */
   dueDate: string | null;
+  /** When the assignee sent it for review (IN_REVIEW only). */
+  submittedAt: string | null;
+  /** What a manager asked to change when sending it back (PENDING only). */
+  reviewNote: string | null;
   completedAt: string | null;
   selfAssigned: boolean;
   /** null = open: any member can take it. */
@@ -42,6 +47,8 @@ const taskSelect = {
   xpReward: true,
   status: true,
   dueDate: true,
+  submittedAt: true,
+  reviewNote: true,
   completedAt: true,
   selfAssigned: true,
   assignee: { select: personSelect },
@@ -62,6 +69,8 @@ function toTaskDTO(t: TaskRow): OrgTaskDTO {
     xpReward: t.xpReward,
     status: t.status,
     dueDate: t.dueDate ? dueDateToInput(t.dueDate) : null,
+    submittedAt: t.submittedAt?.toISOString() ?? null,
+    reviewNote: t.reviewNote,
     completedAt: t.completedAt?.toISOString() ?? null,
     selfAssigned: t.selfAssigned,
     assignee: t.assignee ? toPerson(t.assignee) : null,
@@ -73,7 +82,7 @@ export async function getOrgBoard(organizationId: string, members: MemberDTO[]) 
   const [tasks, totals] = await Promise.all([
     prisma.orgTask.findMany({
       where: { organizationId },
-      // Pending first (enum order), then by due date (no date last), newest first.
+      // Pending, then in review, then completed (enum order), then by due date (no date last), newest first.
       orderBy: [{ status: "asc" }, { dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
       select: taskSelect,
     }),
@@ -109,15 +118,19 @@ export async function getOrgBoard(organizationId: string, members: MemberDTO[]) 
 
 export interface MyOrgTasksGroup {
   organization: { id: string; name: string; slug: string };
+  /** Owners and admins approve or send back the tasks in review. */
+  canReview: boolean;
   tasks: OrgTaskDTO[];
 }
 
-/** Most pending tasks the dashboard lists across all of a user's organizations. */
+const MANAGER_ROLES: OrgRole[] = (["OWNER", "ADMIN", "MEMBER"] as const).filter(canManageTasks);
+
+/** Most tasks the dashboard lists across all of a user's organizations. */
 export const MY_ORG_TASKS_LIMIT = 100;
 
 /**
- * Pending tasks of every organization the user belongs to that are theirs or open to take,
- * grouped by organization (in the order they joined). Organizations without such tasks are kept,
+ * For every organization the user belongs to: their tasks (pending or waiting for review), the open
+ * ones they can take and, where they're a manager, everyone's tasks waiting for review. Grouped by organization (in the order they joined). Organizations without such tasks are kept,
  * with an empty list, so the dashboard can still link to their boards.
  */
 export async function getMyOrgTasks(userId: string): Promise<MyOrgTasksGroup[]> {
@@ -125,13 +138,19 @@ export async function getMyOrgTasks(userId: string): Promise<MyOrgTasksGroup[]> 
     prisma.membership.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
-      select: { organization: { select: { id: true, name: true, slug: true } } },
+      select: { role: true, organization: { select: { id: true, name: true, slug: true } } },
     }),
     prisma.orgTask.findMany({
       where: {
-        status: "PENDING",
         organization: { members: { some: { userId } } },
-        OR: [{ assigneeId: userId }, { assigneeId: null }],
+        OR: [
+          { assigneeId: userId, status: { in: ["PENDING", "IN_REVIEW"] } },
+          { assigneeId: null, status: "PENDING" },
+          {
+            status: "IN_REVIEW",
+            organization: { members: { some: { userId, role: { in: MANAGER_ROLES } } } },
+          },
+        ],
       },
       // Due soonest first (no date last), then newest.
       orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
@@ -147,8 +166,9 @@ export async function getMyOrgTasks(userId: string): Promise<MyOrgTasksGroup[]> 
     byOrganization.set(task.organizationId, list);
   }
 
-  return memberships.map(({ organization }) => ({
+  return memberships.map(({ role, organization }) => ({
     organization,
+    canReview: canManageTasks(role),
     tasks: byOrganization.get(organization.id) ?? [],
   }));
 }

@@ -8,7 +8,8 @@ import { addUserXp, unlockAchievements } from "@/lib/gamification/server";
 import { canManageTasks } from "@/lib/organizations/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { orgTaskInputSchema, taskIdSchema, type OrgTaskFieldErrors } from "@/lib/validations/task";
+import type { Prisma } from "@/generated/prisma/client";
+import { orgTaskInputSchema, reviewNoteSchema, taskIdSchema, type OrgTaskFieldErrors } from "@/lib/validations/task";
 import { XP_BY_DIFFICULTY } from "@/lib/xp";
 
 type Failure = { ok: false; error?: string; fieldErrors?: OrgTaskFieldErrors };
@@ -92,7 +93,7 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
   const found = await taskForMember(taskId, user.id);
   if (!found) return NOT_FOUND;
   if (!canManageTasks(found.role)) return FORBIDDEN;
-  if (found.task.status === "COMPLETED") return { ok: false, error: "Reabre la tarea antes de editarla." };
+  if (found.task.status !== "PENDING") return { ok: false, error: notEditable(found.task.status) };
 
   const parsed = orgTaskInputSchema.safeParse(input);
   if (!parsed.success) return invalidInput(parsed.error);
@@ -115,10 +116,14 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
       selfAssigned: nextAssignee !== null && nextAssignee === found.task.assigneeId && found.task.selfAssigned,
     },
   });
-  if (count === 0) return { ok: false, error: "Reabre la tarea antes de editarla." };
+  if (count === 0) return { ok: false, error: "Solo se pueden editar tareas pendientes." };
 
   revalidateBoard();
   return { ok: true };
+}
+
+function notEditable(status: string) {
+  return status === "IN_REVIEW" ? "Revisa la tarea antes de editarla." : "Reabre la tarea antes de editarla.";
 }
 
 /** Deleting a completed task keeps the XP already paid. */
@@ -141,7 +146,8 @@ export async function claimOrgTask(taskId: unknown): Promise<Result> {
 
   const { count } = await prisma.orgTask.updateMany({
     where: { id: found.task.id, status: "PENDING", assigneeId: null },
-    data: { assigneeId: user.id, selfAssigned: true },
+    // A note left for a previous assignee isn't meant for the new one.
+    data: { assigneeId: user.id, selfAssigned: true, reviewNote: null },
   });
   if (count === 0) return { ok: false, error: "Alguien más ya tomó esta tarea." };
 
@@ -157,7 +163,7 @@ export async function releaseOrgTask(taskId: unknown): Promise<Result> {
 
   const { count } = await prisma.orgTask.updateMany({
     where: { id: found.task.id, status: "PENDING", assigneeId: user.id, selfAssigned: true },
-    data: { assigneeId: null, selfAssigned: false },
+    data: { assigneeId: null, selfAssigned: false, reviewNote: null },
   });
   if (count === 0) return { ok: false, error: "Solo puedes soltar tareas que tomaste tú." };
 
@@ -172,36 +178,110 @@ export interface OrgCompletionOutcome {
   leveledUp: boolean;
 }
 
-/** The assignee completes the task and the XP goes straight to their personal level. */
-export async function completeOrgTask(taskId: unknown): Promise<Result<OrgCompletionOutcome>> {
+/**
+ * Completes a task in `from` status and pays its XP to `assigneeId`, once: the conditional update
+ * makes a double click, or two reviewers approving at the same time, pay a single time.
+ */
+async function payCompletion(
+  tx: Prisma.TransactionClient,
+  taskId: string,
+  assigneeId: string,
+  reviewerId: string,
+  from: "PENDING" | "IN_REVIEW",
+): Promise<OrgCompletionOutcome | null> {
+  const task = await tx.orgTask.findUniqueOrThrow({ where: { id: taskId }, select: { xpReward: true } });
+  const now = new Date();
+  const { count } = await tx.orgTask.updateMany({
+    where: { id: taskId, status: from, assigneeId },
+    data: {
+      status: "COMPLETED",
+      completedAt: now,
+      completedById: assigneeId,
+      reviewedById: reviewerId,
+      reviewNote: null,
+      awardedXp: task.xpReward,
+    },
+  });
+  if (count === 0) return null;
+
+  const { level, leveledUp } = await addUserXp(tx, assigneeId, task.xpReward);
+  const achievements = await unlockAchievements(tx, assigneeId, level, now);
+  return { xpDelta: task.xpReward, achievements, level, leveledUp };
+}
+
+export type SubmitOutcome = { status: "IN_REVIEW" } | ({ status: "COMPLETED" } & OrgCompletionOutcome);
+
+/**
+ * The assignee finishes the task. A member's work goes to review first; owners and admins are the
+ * reviewers, so their own tasks complete (and pay) right away.
+ */
+export async function submitOrgTask(taskId: unknown): Promise<Result<SubmitOutcome>> {
   const user = await requireUser();
   const found = await taskForMember(taskId, user.id);
   if (!found) return NOT_FOUND;
-  if (found.task.assigneeId !== user.id) return { ok: false, error: "Solo quien tiene la tarea puede completarla." };
+  if (found.task.assigneeId !== user.id) return { ok: false, error: "Solo quien tiene la tarea puede entregarla." };
 
   try {
-    const outcome = await prisma.$transaction(async (tx): Promise<OrgCompletionOutcome | null> => {
-      const task = await tx.orgTask.findUniqueOrThrow({ where: { id: found.task.id }, select: { xpReward: true } });
-      const now = new Date();
-      // Conditional update so a double click can't pay twice.
-      const { count } = await tx.orgTask.updateMany({
-        where: { id: found.task.id, status: "PENDING", assigneeId: user.id },
-        data: { status: "COMPLETED", completedAt: now, completedById: user.id, awardedXp: task.xpReward },
-      });
-      if (count === 0) return null;
+    if (canManageTasks(found.role)) {
+      const outcome = await prisma.$transaction((tx) => payCompletion(tx, found.task.id, user.id, user.id, "PENDING"));
+      if (!outcome) return { ok: false, error: "Esta tarea ya no está pendiente." };
+      revalidateBoard();
+      return { ok: true, status: "COMPLETED", ...outcome };
+    }
 
-      const { level, leveledUp } = await addUserXp(tx, user.id, task.xpReward);
-      const achievements = await unlockAchievements(tx, user.id, level, now);
-      return { xpDelta: task.xpReward, achievements, level, leveledUp };
+    const { count } = await prisma.orgTask.updateMany({
+      where: { id: found.task.id, status: "PENDING", assigneeId: user.id },
+      data: { status: "IN_REVIEW", submittedAt: new Date(), reviewNote: null },
     });
-    if (!outcome) return { ok: false, error: "Esta tarea ya no está pendiente." };
-
-    revalidateBoard();
-    return { ok: true, ...outcome };
+    if (count === 0) return { ok: false, error: "Esta tarea ya no está pendiente." };
   } catch (error) {
-    console.error("completeOrgTask failed", error);
+    console.error("submitOrgTask failed", error);
     return GENERIC_ERROR;
   }
+
+  revalidateBoard();
+  return { ok: true, status: "IN_REVIEW" };
+}
+
+/** A manager accepts the work: the task completes and its XP goes to the member who did it. */
+export async function approveOrgTask(taskId: unknown): Promise<Result<{ xpDelta: number }>> {
+  const user = await requireUser();
+  const found = await taskForMember(taskId, user.id);
+  if (!found) return NOT_FOUND;
+  if (!canManageTasks(found.role)) return FORBIDDEN;
+  const { assigneeId } = found.task;
+  if (found.task.status !== "IN_REVIEW" || !assigneeId) return { ok: false, error: "Esta tarea no está en revisión." };
+
+  try {
+    const outcome = await prisma.$transaction((tx) =>
+      payCompletion(tx, found.task.id, assigneeId, user.id, "IN_REVIEW"),
+    );
+    if (!outcome) return { ok: false, error: "Esta tarea no está en revisión." };
+    revalidateBoard();
+    return { ok: true, xpDelta: outcome.xpDelta };
+  } catch (error) {
+    console.error("approveOrgTask failed", error);
+    return GENERIC_ERROR;
+  }
+}
+
+/** A manager sends the work back to the same member, optionally saying what to change. No XP moves. */
+export async function rejectOrgTask(taskId: unknown, note?: unknown): Promise<Result> {
+  const user = await requireUser();
+  const found = await taskForMember(taskId, user.id);
+  if (!found) return NOT_FOUND;
+  if (!canManageTasks(found.role)) return FORBIDDEN;
+  const parsed = reviewNoteSchema.safeParse(note ?? undefined);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Nota no válida." };
+
+  const { count } = await prisma.orgTask.updateMany({
+    where: { id: found.task.id, status: "IN_REVIEW" },
+    data: { status: "PENDING", submittedAt: null, reviewNote: parsed.data ?? null, reviewedById: user.id },
+  });
+  if (count === 0) return { ok: false, error: "Esta tarea no está en revisión." };
+
+  revalidateBoard();
+  return { ok: true };
 }
 
 /** Managers send a completed task back to its assignee and take back the XP it paid. */
@@ -221,7 +301,14 @@ export async function reopenOrgTask(taskId: unknown): Promise<Result> {
 
       const { count } = await tx.orgTask.updateMany({
         where: { id: found.task.id, status: "COMPLETED" },
-        data: { status: "PENDING", completedAt: null, completedById: null, awardedXp: 0 },
+        data: {
+          status: "PENDING",
+          completedAt: null,
+          completedById: null,
+          submittedAt: null,
+          reviewedById: null,
+          awardedXp: 0,
+        },
       });
       if (count === 0) return false;
 

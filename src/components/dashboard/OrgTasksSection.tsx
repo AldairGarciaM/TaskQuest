@@ -6,11 +6,12 @@ import Link from "next/link";
 import { useState } from "react";
 
 import OrgTaskCard, { type OrgTaskAction } from "@/components/org-board/OrgTaskCard";
+import RejectTaskDialog from "@/components/org-board/RejectTaskDialog";
 import { useOrgTaskActions } from "@/components/org-board/useOrgTaskActions";
 import type { MyOrgTasksGroup, OrgTaskDTO } from "@/lib/data/org-board";
 import { cn } from "@/lib/utils";
 
-type Filter = "mine" | "open";
+type Filter = "mine" | "open" | "review";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
@@ -23,6 +24,10 @@ const EMPTY: Record<Filter, { title: string; body: string }> = {
     title: "No hay tareas libres",
     body: "Cuando un equipo publique tareas sin responsable, aparecerán aquí.",
   },
+  review: {
+    title: "Nada por revisar",
+    body: "Cuando alguien de tus equipos entregue una tarea, la verás aquí para aprobarla.",
+  },
 };
 
 interface OrgTasksSectionProps {
@@ -32,22 +37,36 @@ interface OrgTasksSectionProps {
 
 export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionProps) {
   const reduceMotion = useReducedMotion();
-  const { pending, claim, release, complete } = useOrgTaskActions();
+  const { pending, claim, release, submit, approve, reject } = useOrgTaskActions();
   const [filter, setFilter] = useState<Filter>("mine");
+  const [rejecting, setRejecting] = useState<OrgTaskDTO | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
 
-  const matches: Record<Filter, (t: OrgTaskDTO) => boolean> = {
+  const matches: Record<Filter, (t: OrgTaskDTO, group: MyOrgTasksGroup) => boolean> = {
     mine: (t) => t.assignee?.userId === myUserId,
-    open: (t) => !t.assignee,
+    open: (t) => !t.assignee && t.status === "PENDING",
+    review: (t, group) => group.canReview && t.status === "IN_REVIEW",
   };
-  const count = (key: Filter) => groups.reduce((n, g) => n + g.tasks.filter(matches[key]).length, 0);
+  const reviewer = groups.some((g) => g.canReview);
+  const filters: [Filter, string][] = [
+    ["mine", "Mías"],
+    ["open", "Libres"],
+    ...(reviewer ? ([["review", "Por revisar"]] as [Filter, string][]) : []),
+  ];
+  const count = (key: Filter) => groups.reduce((n, g) => n + g.tasks.filter((t) => matches[key](t, g)).length, 0);
   const visibleGroups = groups
-    .map((group) => ({ ...group, tasks: group.tasks.filter(matches[filter]) }))
+    .map((group) => ({ ...group, tasks: group.tasks.filter((t) => matches[filter](t, group)) }))
     .filter((group) => group.tasks.length > 0);
 
   function handleAction(action: OrgTaskAction, task: OrgTaskDTO) {
     if (action === "claim") claim(task);
     else if (action === "release") release(task);
-    else if (action === "complete") complete(task);
+    else if (action === "submit") submit(task);
+    else if (action === "approve") approve(task);
+    else if (action === "reject") {
+      setRejecting(task);
+      setRejectOpen(true);
+    }
   }
 
   return (
@@ -59,12 +78,7 @@ export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionPro
 
         {groups.length > 0 && (
           <div role="group" aria-label="Filtrar tareas de organizaciones" className="flex rounded-xl bg-slate-950/60 p-1">
-            {(
-              [
-                ["mine", "Mías"],
-                ["open", "Libres"],
-              ] as const
-            ).map(([value, label]) => (
+            {filters.map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -92,7 +106,7 @@ export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionPro
         <EmptyState {...EMPTY[filter]} />
       ) : (
         <div className="space-y-6">
-          {visibleGroups.map(({ organization, tasks }) => (
+          {visibleGroups.map(({ organization, canReview, tasks }) => (
             <div key={organization.id} className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-300">
@@ -129,6 +143,7 @@ export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionPro
                         task={task}
                         myUserId={myUserId}
                         canManage={false}
+                        canReview={canReview}
                         busy={pending}
                         onAction={handleAction}
                       />
@@ -140,6 +155,14 @@ export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionPro
           ))}
         </div>
       )}
+
+      <RejectTaskDialog
+        open={rejectOpen}
+        task={rejecting}
+        pending={pending}
+        onCancel={() => setRejectOpen(false)}
+        onConfirm={(note) => rejecting && reject(rejecting, note, () => setRejectOpen(false))}
+      />
     </section>
   );
 }

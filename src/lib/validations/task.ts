@@ -41,3 +41,13 @@ export const orgTaskInputSchema = taskInputSchema.extend({
 
 export type OrgTaskInput = z.input<typeof orgTaskInputSchema>;
 export type OrgTaskFieldErrors = Partial<Record<keyof OrgTaskInput, string[]>>;
+
+export const REVIEW_NOTE_MAX = 300;
+
+/** Optional note a manager leaves when sending a task back; blank means no note. */
+export const reviewNoteSchema = z
+  .string()
+  .trim()
+  .max(REVIEW_NOTE_MAX, { error: `Máximo ${REVIEW_NOTE_MAX} caracteres` })
+  .optional()
+  .transform((note) => note || undefined);

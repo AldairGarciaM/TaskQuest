@@ -56,8 +56,9 @@ async function roleIn(organizationId: string, userId: string) {
 async function removeMembership(organizationId: string, userId: string) {
   await prisma.$transaction([
     prisma.orgTask.updateMany({
-      where: { organizationId, assigneeId: userId, status: "PENDING" },
-      data: { assigneeId: null, selfAssigned: false },
+      // Work waiting for review goes back to the pool too: nobody is left to pay.
+      where: { organizationId, assigneeId: userId, status: { in: ["PENDING", "IN_REVIEW"] } },
+      data: { assigneeId: null, selfAssigned: false, status: "PENDING", submittedAt: null, reviewNote: null },
     }),
     prisma.membership.deleteMany({ where: { organizationId, userId } }),
   ]);

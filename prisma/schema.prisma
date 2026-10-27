@@ -19,6 +19,13 @@ enum TaskStatus {
   COMPLETED
 }
 
+/// Org tasks go through a manager's review before they're completed and pay XP.
+enum OrgTaskStatus {
+  PENDING
+  IN_REVIEW
+  COMPLETED
+}
+
 enum OrgRole {
   OWNER
   ADMIN
@@ -54,6 +61,7 @@ model User {
   assignedOrgTasks  OrgTask[] @relation("OrgTaskAssignee")
   createdOrgTasks   OrgTask[] @relation("OrgTaskCreator")
   completedOrgTasks OrgTask[] @relation("OrgTaskCompleter")
+  reviewedOrgTasks  OrgTask[] @relation("OrgTaskReviewer")
 }
 
 model Task {
@@ -152,17 +160,22 @@ model Invitation {
 }
 
 /// A task on an organization board. No assignee = any member can take it.
-/// Completing it pays XP to the assignee's personal level; a manager reopening it takes that XP back.
+/// The assignee submits it for review; a manager approves it (pays XP to the assignee's personal level)
+/// or sends it back with a note. A manager reopening a completed task takes that XP back.
 model OrgTask {
   id          String     @id @default(cuid())
   title       String
   description String?
   difficulty  Difficulty @default(EASY)
   xpReward    Int
-  status      TaskStatus @default(PENDING)
+  status      OrgTaskStatus @default(PENDING)
   dueDate     DateTime?
   /// True when the assignee took it from the open pool (they may give it back).
   selfAssigned Boolean   @default(false)
+  /// When the assignee sent it for review (null while pending).
+  submittedAt DateTime?
+  /// Why a manager sent it back; shown to the assignee until they submit again.
+  reviewNote  String?
   completedAt DateTime?
   /// XP actually paid on completion, so reopening reverses exactly that.
   awardedXp   Int        @default(0)
@@ -177,6 +190,8 @@ model OrgTask {
   createdBy      User?        @relation("OrgTaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
   completedById  String?
   completedBy    User?        @relation("OrgTaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+  reviewedById   String?
+  reviewedBy     User?        @relation("OrgTaskReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
   @@index([assigneeId])

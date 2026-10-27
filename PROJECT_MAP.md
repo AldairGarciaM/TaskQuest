@@ -44,7 +44,7 @@ src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol)
 src/app/(dashboard)/organizaciones/[slug]/organization.ts loadOrganization(slug) con cache(); no miembro → redirect a la lista
 src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del equipo + ranking
 src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  miembros, invitar, pendientes, salir/eliminar
-src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, completeOrgTask, reopenOrgTask
+src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
@@ -62,8 +62,8 @@ src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropd
 src/components/layout/      DashboardLayout (prop userName), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
-src/components/org-board/   OrgBoard (filtros Pendientes/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Completar + menú),
-                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking, useOrgTaskActions (tomar/soltar/completar + toasts; tablero y dashboard)
+src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
+                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking, RejectTaskDialog (nota opcional), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
@@ -158,8 +158,10 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones; "Pronto": Calendario
 | `deleteOrgTask(id)` | idem | OWNER/ADMIN; la XP ya pagada se conserva |
 | `claimOrgTask(id)` | idem | Cualquier miembro toma una libre (update condicional: solo uno gana) → selfAssigned |
 | `releaseOrgTask(id)` | idem | Solo quien la tomó por su cuenta; las asignadas por un jefe no se sueltan |
-| `completeOrgTask(id)` | idem | Solo el responsable. Paga xpReward a su XP personal una vez (awardedXp), recalcula nivel, desbloquea logros |
-| `reopenOrgTask(id)` | idem | OWNER/ADMIN. Vuelve a pendiente con el mismo responsable y descuenta awardedXp a quien la completó |
+| `submitOrgTask(id)` | idem | Solo el responsable. MEMBER → IN_REVIEW (sin XP). OWNER/ADMIN con tarea propia → COMPLETED y cobra al instante |
+| `approveOrgTask(id)` | idem | OWNER/ADMIN. IN_REVIEW → COMPLETED; paga xpReward una vez (update condicional) al responsable (completedById), reviewedById = quien aprueba, desbloquea logros del responsable |
+| `rejectOrgTask(id, note?)` | idem | OWNER/ADMIN. IN_REVIEW → PENDING con el mismo responsable y `reviewNote` (≤300, opcional). Sin XP |
+| `reopenOrgTask(id)` | idem | OWNER/ADMIN. Vuelve a pendiente con el mismo responsable, limpia revisión y descuenta awardedXp a quien la completó |
 | `acceptInvitation(token)` | `src/app/actions/invitations.ts` | Requiere sesión; el correo de la BD debe ser el invitado. Marca usada con update condicional (un solo uso aunque haya peticiones en paralelo) |
 | `acceptInvitationWithSignup(token, profile)` | idem | Sin sesión: crea cuenta con el correo invitado + membresía en una transacción; el cliente hace signIn después |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName |
@@ -168,7 +170,7 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna).
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
@@ -178,7 +180,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 
 | Organization | id, name, slug (unique) | |
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
-| OrgTask | id, title, description?, difficulty, xpReward, status, dueDate?, selfAssigned, completedAt?, awardedXp, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
+| OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
 Enums: `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
@@ -239,6 +241,8 @@ Plantilla en `.env.example` (copiar a `.env`):
 
 - 2026-10-27: Cabecera del dashboard unificada (ProgressHero): nivel y estadísticas en un solo panel. "XP total" pasó al panel de nivel y su lugar en la franja lo ocupa "Pendientes". Las estadísticas cuentan solo misiones personales.
 
+- 2026-10-27: Revisión de tareas de equipo: el miembro entrega (IN_REVIEW) y un OWNER/ADMIN aprueba (paga XP al miembro) o pide cambios con nota opcional. Las tareas propias de OWNER/ADMIN no pasan por revisión (ellos son los revisores). En revisión no se puede soltar ni editar. Quitar/salir devuelve también las tareas en revisión al pool. Dashboard: filtro "Por revisar" solo para quien puede revisar.
+
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
@@ -247,6 +251,7 @@ En curso — organizaciones (idea del usuario 2026-10-26)
 - [ ] Límite de invitaciones por hora (hoy solo hay tope de 10 organizaciones por dueño).
 - [x] Tablero de la organización: asignar o dejar libre, tomar/soltar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
 - [ ] Ranking semanal/mensual (hoy es histórico).
+- [ ] Avisar al miembro cuando su tarea se aprueba o se devuelve (hoy solo lo ve al entrar).
 - [ ] Decidir si las tareas de organización cuentan para misiones diarias y racha.
 
 Prioridad 1 — entorno
@@ -282,6 +287,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-27: Rama `feat/org-task-review` (sobre `feat/dashboard-hero`): flujo de revisión de tareas de equipo (entregar → aprobar / pedir cambios), enum OrgTaskStatus.
 - 2026-10-27: Rama `feat/dashboard-hero` (sobre `feat/dashboard-org-tasks`): rediseño de nivel + estadísticas en ProgressHero; se eliminaron StatsCard y xpHeroCard.
 - 2026-10-27: Rama `feat/dashboard-org-tasks` (sobre `feat/org-board`): sección "Tareas de organizaciones" en el dashboard, hook useOrgTaskActions compartido.
 - 2026-10-27: Rama `feat/org-board` (sobre `feat/organizations`): modelo OrgTask, tablero con tareas asignadas o libres, tomar/soltar/completar/reabrir, ranking, pestañas Tablero/Miembros. 137 pruebas pasan, build OK.

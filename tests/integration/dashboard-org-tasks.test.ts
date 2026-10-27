@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { claimOrgTask, completeOrgTask, createOrgTask } from "@/app/actions/org-tasks";
+import { approveOrgTask, claimOrgTask, createOrgTask, submitOrgTask } from "@/app/actions/org-tasks";
 import { leaveOrganization } from "@/app/actions/organizations";
 import { getMyOrgTasks } from "@/lib/data/org-board";
 import { prisma } from "@/lib/prisma";
@@ -44,12 +44,37 @@ describe("getMyOrgTasks", () => {
     await addTask(beta.id, "Libre en Beta");
 
     signInAs(me);
-    await completeOrgTask(done.id);
+    await submitOrgTask(done.id);
+    signInAs(owner);
+    await approveOrgTask(done.id);
 
     expect(titles(await getMyOrgTasks(me.id))).toEqual([
       ["Alpha", ["Libre en Alpha", "Mía en Alpha"]],
       ["Beta", ["Libre en Beta"]],
     ]);
+  });
+
+  it("keeps my tasks in review and shows everyone's reviews only to managers", async () => {
+    const owner = await createUser();
+    const me = await createUser();
+    const other = await createUser();
+    const organization = await organizationWith("Equipo", owner, [me, other]);
+
+    signInAs(owner);
+    const mine = await addTask(organization.id, "Mi entrega", me.id);
+    const theirs = await addTask(organization.id, "Su entrega", other.id);
+    signInAs(me);
+    await submitOrgTask(mine.id);
+    signInAs(other);
+    await submitOrgTask(theirs.id);
+
+    const [memberView] = await getMyOrgTasks(me.id);
+    expect(memberView.canReview).toBe(false);
+    expect(memberView.tasks.map((t) => [t.title, t.status])).toEqual([["Mi entrega", "IN_REVIEW"]]);
+
+    const [ownerView] = await getMyOrgTasks(owner.id);
+    expect(ownerView.canReview).toBe(true);
+    expect(ownerView.tasks.map((t) => t.title).sort()).toEqual(["Mi entrega", "Su entrega"]);
   });
 
   it("never shows tasks of organizations I don't belong to", async () => {

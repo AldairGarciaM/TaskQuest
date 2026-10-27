@@ -12,14 +12,16 @@ import { cn } from "@/lib/utils";
 
 import OrgTaskCard, { type OrgTaskAction } from "./OrgTaskCard";
 import OrgTaskFormSheet from "./OrgTaskFormSheet";
+import RejectTaskDialog from "./RejectTaskDialog";
 import { useOrgTaskActions } from "./useOrgTaskActions";
 
-type Filter = "pending" | "open" | "mine" | "completed";
+type Filter = "pending" | "review" | "open" | "mine" | "completed";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 const EMPTY: Record<Filter, string> = {
   pending: "No hay tareas pendientes.",
+  review: "No hay entregas esperando revisión.",
   open: "No hay tareas libres. Cuando haya, cualquiera puede tomarlas.",
   mine: "No tienes tareas. Toma una libre o espera a que te asignen.",
   completed: "Aún no se ha completado ninguna tarea.",
@@ -35,22 +37,26 @@ interface OrgBoardProps {
 
 export default function OrgBoard({ organizationId, myUserId, canManage, tasks, members }: OrgBoardProps) {
   const reduceMotion = useReducedMotion();
-  const { pending, run, claim, release, complete } = useOrgTaskActions();
+  const { pending, run, claim, release, submit, approve, reject } = useOrgTaskActions();
   const [filter, setFilter] = useState<Filter>("pending");
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [editing, setEditing] = useState<OrgTaskDTO | null>(null);
   const [confirm, setConfirm] = useState<{ kind: "delete" | "reopen"; task: OrgTaskDTO } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [rejecting, setRejecting] = useState<OrgTaskDTO | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
 
   const matches: Record<Filter, (t: OrgTaskDTO) => boolean> = {
     pending: (t) => t.status === "PENDING",
+    review: (t) => t.status === "IN_REVIEW",
     open: (t) => t.status === "PENDING" && !t.assignee,
-    mine: (t) => t.status === "PENDING" && t.assignee?.userId === myUserId,
+    mine: (t) => t.status !== "COMPLETED" && t.assignee?.userId === myUserId,
     completed: (t) => t.status === "COMPLETED",
   };
   const filters: { key: Filter; label: string }[] = [
     { key: "pending", label: "Pendientes" },
+    { key: "review", label: "En revisión" },
     { key: "open", label: "Libres" },
     { key: "mine", label: "Mías" },
     { key: "completed", label: "Completadas" },
@@ -69,8 +75,14 @@ export default function OrgBoard({ organizationId, myUserId, canManage, tasks, m
         return claim(task);
       case "release":
         return release(task);
-      case "complete":
-        return complete(task);
+      case "submit":
+        return submit(task);
+      case "approve":
+        return approve(task);
+      case "reject":
+        setRejecting(task);
+        setRejectOpen(true);
+        return;
       case "edit":
         return openForm(task);
       case "reopen":
@@ -160,6 +172,7 @@ export default function OrgBoard({ organizationId, myUserId, canManage, tasks, m
                   task={task}
                   myUserId={myUserId}
                   canManage={canManage}
+                  canReview={canManage}
                   busy={pending}
                   onAction={handleAction}
                 />
@@ -179,6 +192,14 @@ export default function OrgBoard({ organizationId, myUserId, canManage, tasks, m
           formKey={formKey}
         />
       )}
+
+      <RejectTaskDialog
+        open={rejectOpen}
+        task={rejecting}
+        pending={pending}
+        onCancel={() => setRejectOpen(false)}
+        onConfirm={(note) => rejecting && reject(rejecting, note, () => setRejectOpen(false))}
+      />
 
       <ConfirmDialog
         open={confirmOpen}
