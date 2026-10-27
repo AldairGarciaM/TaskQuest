@@ -27,6 +27,8 @@ Tests: Vitest 3 (Vitest 5 exige Node 22; aquí se usa Node 20.19).
 | `pnpm test:unit` / `pnpm test:integration` | Solo un proyecto de Vitest |
 | `pnpm test:watch` | Vitest en modo watch |
 
+Si `pnpm dev` se queda en "Compiling …" sin terminar (pasa tras mover/crear rutas o migraciones con el servidor encendido): detener el servidor, borrar `.next/dev` (caché persistente de Turbopack) y volver a arrancar. En esta máquina la primera compilación de una ruta tarda ~1,5 min.
+
 Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuilds` aprueba scripts de `esbuild`, `@prisma/engines`, `prisma`, `sharp`, `unrs-resolver`.
 
 ## Estructura
