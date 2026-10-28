@@ -38,6 +38,7 @@ const menuItems = [
   {
     label: "Calendario",
     icon: Calendar,
+    href: "/calendario",
   },
   {
     label: "Estadísticas",

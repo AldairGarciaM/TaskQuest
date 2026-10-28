@@ -26,9 +26,11 @@ interface TaskFormSheetProps {
   task: TaskDTO | null;
   /** Changes every time the sheet opens, so the form starts fresh. */
   formKey: number;
+  /** "YYYY-MM-DD" prefilled when creating (e.g. the day picked on the calendar). */
+  defaultDueDate?: string;
 }
 
-export default function TaskFormSheet({ open, onOpenChange, task, formKey }: TaskFormSheetProps) {
+export default function TaskFormSheet({ open, onOpenChange, task, formKey, defaultDueDate }: TaskFormSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -46,13 +48,21 @@ export default function TaskFormSheet({ open, onOpenChange, task, formKey }: Tas
           </SheetDescription>
         </SheetHeader>
 
-        <TaskForm key={formKey} task={task} onDone={() => onOpenChange(false)} />
+        <TaskForm key={formKey} task={task} defaultDueDate={defaultDueDate} onDone={() => onOpenChange(false)} />
       </SheetContent>
     </Sheet>
   );
 }
 
-function TaskForm({ task, onDone }: { task: TaskDTO | null; onDone: () => void }) {
+function TaskForm({
+  task,
+  defaultDueDate,
+  onDone,
+}: {
+  task: TaskDTO | null;
+  defaultDueDate?: string;
+  onDone: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const [fieldErrors, setFieldErrors] = useState<TaskFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -129,7 +139,7 @@ function TaskForm({ task, onDone }: { task: TaskDTO | null; onDone: () => void }
           label="Fecha límite (opcional)"
           name="dueDate"
           type="date"
-          defaultValue={task?.dueDate ?? ""}
+          defaultValue={task ? (task.dueDate ?? "") : (defaultDueDate ?? "")}
           className="scheme-dark"
           error={fieldErrors.dueDate?.[0]}
         />

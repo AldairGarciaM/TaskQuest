@@ -38,6 +38,7 @@ src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser() y ge
 src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Misiones personales" (TaskList) y "Tareas de organizaciones" (OrgTasksSection)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
+src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM: cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
@@ -68,9 +69,10 @@ src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mí
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
+src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero; Motion)
 src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
-src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar),
-                            TaskFormSheet (crear/editar en Sheet), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
+src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
+                            TaskFormSheet (crear/editar en Sheet; prop defaultDueDate), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
 src/components/form/        FormField (input con label/error accesible; usado en auth y misiones)
 src/components/ui/sonner.tsx  <Toaster /> oscuro (montado en el layout raíz)
 src/lib/utils.ts            cn()
@@ -82,6 +84,8 @@ src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profile
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
+src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
+src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo asignadas a mí (orgs donde sigo), pendientes sin fecha
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
@@ -131,6 +135,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | Ruta | Archivo | Estado |
 |---|---|---|
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
+| `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; `?mes=YYYY-MM` |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
 | `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking |
@@ -140,7 +145,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
-Menú lateral: Dashboard, Misiones, Logros, Organizaciones; "Pronto": Calendario, Estadísticas, Historial. Las subrutas resaltan su sección.
+Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario; "Pronto": Estadísticas, Historial. Las subrutas resaltan su sección.
 
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
@@ -249,6 +254,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Revisión de tareas de equipo: el miembro entrega (IN_REVIEW) y un OWNER/ADMIN aprueba (paga XP al miembro) o pide cambios con nota opcional. Las tareas propias de OWNER/ADMIN no pasan por revisión (ellos son los revisores). En revisión no se puede soltar ni editar. Quitar/salir devuelve también las tareas en revisión al pool. Dashboard: filtro "Por revisar" solo para quien puede revisar.
 
 - 2026-10-28: Notificaciones guardadas en BD y creadas en la transacción de la revisión (no se pierden ni se duplican). Entrega por sondeo cada 30 s con la pestaña visible (sin WebSockets/SSE por ahora). Abrir la campana marca todo como leído. El último aviso mostrado como toast se recuerda en localStorage por usuario para no repetirlo al recargar.
+- 2026-10-28: Calendario por fecha límite (no por fecha de completado). El mes va en la URL (`?mes=`) para poder compartir/volver; el día seleccionado es estado del cliente. Muestra las tareas de equipo asignadas a mí, solo lectura (se gestionan en el tablero). "Vencida" = pendiente con fecha pasada; las que están en revisión no cuentan. Las acciones de tareas y de equipo revalidan `/calendario`.
 
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
@@ -278,7 +284,9 @@ Prioridad 2 — funcionalidad
 - [x] XP y nivel calculados en servidor al completar tareas.
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
 - [x] Misiones diarias, racha y logros.
-- [ ] Calendario, estadísticas, historial (en el menú como "Pronto").
+- [x] Calendario mensual.
+- [ ] Estadísticas, historial (en el menú como "Pronto").
+- [ ] Calendario: arrastrar para cambiar la fecha, vista semanal.
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
 Prioridad 3 — UX
@@ -295,7 +303,8 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
-- 2026-10-28: Rama `feat/org-task-notifications` (sobre `feat/org-task-review`): modelo Notification, aviso al aprobar ("¡Tarea aprobada! +X XP") o pedir cambios, campana en el navbar con contador y toasts. 163 pruebas pasan, build OK.
+- 2026-10-28: Rama `feat/calendar` (sobre `main`): página /calendario, helpers puros de mes, completar/crear misiones desde el calendario, toasts de completar extraídos a `completion.tsx`. 180 pruebas pasan, build OK.
+- 2026-10-28: Rama `feat/org-task-notifications` (sobre `feat/org-task-review`): modelo Notification, aviso al aprobar ("¡Tarea aprobada! +X XP") o pedir cambios, campana en el navbar con contador y toasts. 163 pruebas pasan, build OK. Fusionada a `main` (fast-forward) con permiso del usuario.
 - 2026-10-27: Rama `feat/org-task-review` (sobre `feat/dashboard-hero`): flujo de revisión de tareas de equipo (entregar → aprobar / pedir cambios), enum OrgTaskStatus.
 - 2026-10-27: Rama `feat/dashboard-hero` (sobre `feat/dashboard-org-tasks`): rediseño de nivel + estadísticas en ProgressHero; se eliminaron StatsCard y xpHeroCard.
 - 2026-10-27: Rama `feat/dashboard-org-tasks` (sobre `feat/org-board`): sección "Tareas de organizaciones" en el dashboard, hook useOrgTaskActions compartido.

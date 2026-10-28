@@ -44,6 +44,7 @@ export async function createTask(input: unknown): Promise<Result> {
   }
 
   revalidatePath("/");
+  revalidatePath("/calendario");
   return { ok: true };
 }
 
@@ -87,6 +88,7 @@ export async function updateTask(taskId: unknown, input: unknown): Promise<Resul
   }
 
   revalidatePath("/");
+  revalidatePath("/calendario");
   return { ok: true };
 }
 
@@ -172,6 +174,7 @@ export async function setTaskCompleted(
 
     if (!result) return NOT_FOUND;
     revalidatePath("/");
+    revalidatePath("/calendario");
     revalidatePath("/logros");
     return { ok: true, ...result };
   } catch (error) {
@@ -197,5 +200,6 @@ export async function deleteTask(taskId: unknown): Promise<Result> {
   }
 
   revalidatePath("/");
+  revalidatePath("/calendario");
   return { ok: true };
 }
