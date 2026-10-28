@@ -51,7 +51,9 @@ export function canDeleteOrganization(actor: OrgRole): boolean {
   return actor === "OWNER";
 }
 
-/** Owners and admins create, assign, edit, delete and reopen board tasks. */
+/** Owners and admins create, assign, edit, delete and reopen board tasks, and follow everyone's. */
+export const TASK_MANAGER_ROLES = ["OWNER", "ADMIN"] as const satisfies readonly OrgRole[];
+
 export function canManageTasks(actor: OrgRole): boolean {
-  return actor === "OWNER" || actor === "ADMIN";
+  return (TASK_MANAGER_ROLES as readonly OrgRole[]).includes(actor);
 }

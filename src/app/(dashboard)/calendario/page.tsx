@@ -29,7 +29,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold">Calendario</h1>
-          <p className="text-slate-400">Tus misiones y tareas de equipo según su fecha límite.</p>
+          <p className="text-slate-400">Tus misiones y las tareas de tus equipos según su fecha límite.</p>
         </div>
 
         <nav aria-label="Cambiar de mes" className="flex items-center gap-2">
@@ -53,7 +53,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
         </nav>
       </header>
 
-      <CalendarView key={current} month={month} today={today} data={data} />
+      <CalendarView key={current} month={month} today={today} data={data} userId={user.id} />
     </div>
   );
 }

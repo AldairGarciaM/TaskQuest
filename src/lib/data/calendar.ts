@@ -2,9 +2,19 @@ import type { Difficulty, OrgTaskStatus } from "@/generated/prisma/enums";
 import { gridRange, type YearMonth } from "@/lib/calendar";
 import type { TaskDTO } from "@/lib/data/dashboard";
 import { dueDateFromInput, dueDateToInput } from "@/lib/dates";
+import { TASK_MANAGER_ROLES } from "@/lib/organizations/permissions";
 import { prisma } from "@/lib/prisma";
 
-/** A team task assigned to me, as the calendar shows it (managed from the board). */
+export interface CalendarPerson {
+  userId: string;
+  firstName: string;
+  lastName: string;
+}
+
+/**
+ * A team task as the calendar shows it (managed from the board): mine, or any task of an
+ * organization where I'm an owner or admin.
+ */
 export interface CalendarOrgTask {
   id: string;
   title: string;
@@ -13,6 +23,10 @@ export interface CalendarOrgTask {
   status: OrgTaskStatus;
   dueDate: string;
   organization: { name: string; slug: string };
+  /** null = open: nobody has taken it yet. */
+  assignee: CalendarPerson | null;
+  /** Who finished it (COMPLETED only); can differ from the assignee if it was reassigned later. */
+  completedBy: CalendarPerson | null;
 }
 
 export interface CalendarMonth {
@@ -21,6 +35,12 @@ export interface CalendarMonth {
   orgTasks: CalendarOrgTask[];
   /** Pending personal tasks without a due date (they can't be placed on the calendar). */
   undatedPending: number;
+}
+
+const personSelect = { id: true, firstName: true, lastName: true } as const;
+
+function toPerson({ id, firstName, lastName }: { id: string; firstName: string; lastName: string }): CalendarPerson {
+  return { userId: id, firstName, lastName };
 }
 
 export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<CalendarMonth> {
@@ -43,8 +63,15 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
       },
     }),
     prisma.orgTask.findMany({
-      // Only tasks of organizations I still belong to (leaving releases them, but be explicit).
-      where: { assigneeId: userId, dueDate, organization: { members: { some: { userId } } } },
+      where: {
+        dueDate,
+        OR: [
+          // Mine, only while I still belong to the organization (leaving releases them, but be explicit).
+          { assigneeId: userId, organization: { members: { some: { userId } } } },
+          // Managers follow the whole team's deadlines.
+          { organization: { members: { some: { userId, role: { in: [...TASK_MANAGER_ROLES] } } } } },
+        ],
+      },
       orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
@@ -54,6 +81,8 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
         status: true,
         dueDate: true,
         organization: { select: { name: true, slug: true } },
+        assignee: { select: personSelect },
+        completedBy: { select: personSelect },
       },
     }),
     prisma.task.count({ where: { userId, status: "PENDING", dueDate: null } }),
@@ -65,7 +94,12 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
       dueDate: dueDateToInput(task.dueDate!),
       completedAt: task.completedAt?.toISOString() ?? null,
     })),
-    orgTasks: orgTasks.map((task) => ({ ...task, dueDate: dueDateToInput(task.dueDate!) })),
+    orgTasks: orgTasks.map((task) => ({
+      ...task,
+      dueDate: dueDateToInput(task.dueDate!),
+      assignee: task.assignee && toPerson(task.assignee),
+      completedBy: task.completedBy && toPerson(task.completedBy),
+    })),
     undatedPending,
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarPlus, CircleDashed, Users } from "lucide-react";
+import { CalendarPlus, CircleCheck, CircleDashed, UserRound, Users } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useOptimistic, useRef, useState, useTransition, type KeyboardEvent } from "react";
@@ -10,7 +10,7 @@ import { toggleTaskWithToasts } from "@/components/task/completion";
 import TaskFormSheet from "@/components/task/TaskFormSheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { dayLabel, monthGrid, WEEKDAY_LABELS, type CalendarDay, type YearMonth } from "@/lib/calendar";
-import type { CalendarMonth, CalendarOrgTask } from "@/lib/data/calendar";
+import type { CalendarMonth, CalendarOrgTask, CalendarPerson } from "@/lib/data/calendar";
 import { cn } from "@/lib/utils";
 
 type PersonalTask = CalendarMonth["tasks"][number];
@@ -22,6 +22,8 @@ interface CalendarViewProps {
   /** "YYYY-MM-DD" in the app time zone, computed on the server. */
   today: string;
   data: CalendarMonth;
+  /** The signed-in user, so their own team tasks read "ti". */
+  userId: string;
 }
 
 /** Chips a day cell shows before collapsing the rest into "+N". */
@@ -49,7 +51,7 @@ function applyToggle(tasks: PersonalTask[], change: { id: string; completed: boo
   );
 }
 
-export default function CalendarView({ month, today, data }: CalendarViewProps) {
+export default function CalendarView({ month, today, data, userId }: CalendarViewProps) {
   const reduceMotion = useReducedMotion();
   const [tasks, applyOptimistic] = useOptimistic(data.tasks, applyToggle);
   const [, startTransition] = useTransition();
@@ -208,7 +210,7 @@ export default function CalendarView({ month, today, data }: CalendarViewProps) 
                   {entry.kind === "personal" ? (
                     <PersonalRow task={entry.task} overdue={entry.task.dueDate < today} onToggle={toggle} />
                   ) : (
-                    <OrgRow task={entry.task} overdue={entry.task.dueDate < today} />
+                    <OrgRow task={entry.task} overdue={entry.task.dueDate < today} userId={userId} />
                   )}
                 </motion.li>
               ))}
@@ -355,9 +357,23 @@ function PersonalRow({
   );
 }
 
-function OrgRow({ task, overdue }: { task: CalendarOrgTask; overdue: boolean }) {
+function personName(person: CalendarPerson, userId: string) {
+  return person.userId === userId ? "ti" : `${person.firstName} ${person.lastName}`;
+}
+
+/** "Asignada a …" while the task is still open, "Realizada por …" once it's done. */
+function ownership(task: CalendarOrgTask, userId: string): string {
+  if (task.status === "COMPLETED") {
+    const by = task.completedBy ?? task.assignee;
+    return by ? `Realizada por ${personName(by, userId)}` : "Realizada";
+  }
+  return task.assignee ? `Asignada a ${personName(task.assignee, userId)}` : "Libre: nadie la ha tomado";
+}
+
+function OrgRow({ task, overdue, userId }: { task: CalendarOrgTask; overdue: boolean; userId: string }) {
   const status = ORG_STATUS[task.status];
   const completed = task.status === "COMPLETED";
+  const OwnerIcon = completed ? CircleCheck : UserRound;
 
   return (
     <Link
@@ -375,6 +391,15 @@ function OrgRow({ task, overdue }: { task: CalendarOrgTask; overdue: boolean }) 
           <span className={cn("rounded-full px-2 py-0.5", status.className)}>{status.label}</span>
           <span className="text-slate-400">{task.organization.name}</span>
           {overdue && task.status === "PENDING" && <span className="text-rose-300">Vencida</span>}
+        </p>
+        <p
+          className={cn(
+            "mt-1.5 flex items-center gap-1.5 text-xs",
+            completed ? "text-emerald-300/80" : task.assignee ? "text-slate-300" : "text-slate-500 italic",
+          )}
+        >
+          <OwnerIcon size={13} aria-hidden className="shrink-0" />
+          <span className="truncate">{ownership(task, userId)}</span>
         </p>
       </div>
       <span className={cn("text-sm font-semibold whitespace-nowrap tabular-nums", completed ? "text-slate-500" : "text-sky-300")}>

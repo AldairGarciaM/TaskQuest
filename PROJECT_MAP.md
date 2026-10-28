@@ -69,7 +69,7 @@ src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mí
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
-src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero; Motion)
+src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; Motion)
 src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
 src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
                             TaskFormSheet (crear/editar en Sheet; prop defaultDueDate), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
@@ -85,7 +85,7 @@ src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usado
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
 src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
-src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo asignadas a mí (orgs donde sigo), pendientes sin fecha
+src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
@@ -254,7 +254,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Revisión de tareas de equipo: el miembro entrega (IN_REVIEW) y un OWNER/ADMIN aprueba (paga XP al miembro) o pide cambios con nota opcional. Las tareas propias de OWNER/ADMIN no pasan por revisión (ellos son los revisores). En revisión no se puede soltar ni editar. Quitar/salir devuelve también las tareas en revisión al pool. Dashboard: filtro "Por revisar" solo para quien puede revisar.
 
 - 2026-10-28: Notificaciones guardadas en BD y creadas en la transacción de la revisión (no se pierden ni se duplican). Entrega por sondeo cada 30 s con la pestaña visible (sin WebSockets/SSE por ahora). Abrir la campana marca todo como leído. El último aviso mostrado como toast se recuerda en localStorage por usuario para no repetirlo al recargar.
-- 2026-10-28: Calendario por fecha límite (no por fecha de completado). El mes va en la URL (`?mes=`) para poder compartir/volver; el día seleccionado es estado del cliente. Muestra las tareas de equipo asignadas a mí, solo lectura (se gestionan en el tablero). "Vencida" = pendiente con fecha pasada; las que están en revisión no cuentan. Las acciones de tareas y de equipo revalidan `/calendario`.
+- 2026-10-28: Calendario por fecha límite (no por fecha de completado). El mes va en la URL (`?mes=`) para poder compartir/volver; el día seleccionado es estado del cliente. Muestra las tareas de equipo asignadas a mí, solo lectura (se gestionan en el tablero). Dueños y admins ven además todas las tareas con fecha de sus organizaciones (decisión del usuario 2026-10-28); los miembros solo las suyas. `TASK_MANAGER_ROLES` en permissions.ts. "Vencida" = pendiente con fecha pasada; las que están en revisión no cuentan. Las acciones de tareas y de equipo revalidan `/calendario`.
 
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
@@ -303,6 +303,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-28: Rama `feat/calendar-team` (sobre `feat/calendar`): dueños/admins ven las tareas de todo su equipo en el calendario; texto "Asignada a X" / "Realizada por X". 181 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/calendar` (sobre `main`): página /calendario, helpers puros de mes, completar/crear misiones desde el calendario, toasts de completar extraídos a `completion.tsx`. 180 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/org-task-notifications` (sobre `feat/org-task-review`): modelo Notification, aviso al aprobar ("¡Tarea aprobada! +X XP") o pedir cambios, campana en el navbar con contador y toasts. 163 pruebas pasan, build OK. Fusionada a `main` (fast-forward) con permiso del usuario.
 - 2026-10-27: Rama `feat/org-task-review` (sobre `feat/dashboard-hero`): flujo de revisión de tareas de equipo (entregar → aprobar / pedir cambios), enum OrgTaskStatus.

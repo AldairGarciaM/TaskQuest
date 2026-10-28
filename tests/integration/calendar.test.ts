@@ -72,6 +72,7 @@ describe("getCalendarMonth", () => {
     await orgTask(organization.id, "Mía sin fecha", me.id, null);
     await orgTask(former.id, "De una org en la que ya no estoy", me.id, "2026-10-20");
 
+    // A member only sees their own.
     const { orgTasks } = await getCalendarMonth(me.id, OCTOBER);
     expect(orgTasks).toEqual([
       expect.objectContaining({
@@ -79,7 +80,47 @@ describe("getCalendarMonth", () => {
         dueDate: "2026-10-20",
         status: "PENDING",
         organization: { name: "Equipo", slug: organization.slug },
+        assignee: { userId: me.id, firstName: me.firstName, lastName: me.lastName },
+        completedBy: null,
       }),
+    ]);
+
+    // The owner follows every dated task of their organization, open ones included.
+    const owner = await getCalendarMonth(teammate.id, OCTOBER);
+    expect(owner.orgTasks.map((t) => [t.title, t.assignee?.userId ?? null])).toEqual([
+      ["Mía", me.id],
+      ["Libre", null],
+      ["Del compañero", teammate.id],
+    ]);
+  });
+
+  it("says who finished a completed task", async () => {
+    const me = await createUser();
+    const admin = await createUser();
+    const organization = await prisma.organization.create({ data: { name: "Equipo", slug: `equipo-${Date.now()}` } });
+    await prisma.membership.createMany({
+      data: [
+        { organizationId: organization.id, userId: me.id, role: "MEMBER" },
+        { organizationId: organization.id, userId: admin.id, role: "ADMIN" },
+      ],
+    });
+    await prisma.orgTask.create({
+      data: {
+        organizationId: organization.id,
+        title: "Hecha",
+        difficulty: "EASY",
+        xpReward: 10,
+        status: "COMPLETED",
+        assigneeId: me.id,
+        completedById: me.id,
+        completedAt: new Date(),
+        dueDate: dueDateFromInput("2026-10-05"),
+      },
+    });
+
+    const { orgTasks } = await getCalendarMonth(admin.id, OCTOBER);
+    expect(orgTasks).toEqual([
+      expect.objectContaining({ title: "Hecha", status: "COMPLETED", completedBy: expect.objectContaining({ userId: me.id }) }),
     ]);
   });
 });
