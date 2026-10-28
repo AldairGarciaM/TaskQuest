@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { dueDateFromInput } from "@/lib/dates";
 import { addUserXp, unlockAchievements } from "@/lib/gamification/server";
+import { notifyReview } from "@/lib/notifications/server";
 import { canManageTasks } from "@/lib/organizations/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -40,7 +41,15 @@ async function taskForMember(taskId: unknown, userId: string) {
   if (!id.success) return null;
   const task = await prisma.orgTask.findUnique({
     where: { id: id.data },
-    select: { id: true, organizationId: true, status: true, assigneeId: true, selfAssigned: true, difficulty: true },
+    select: {
+      id: true,
+      title: true,
+      organizationId: true,
+      status: true,
+      assigneeId: true,
+      selfAssigned: true,
+      difficulty: true,
+    },
   });
   if (!task) return null;
   const role = await roleIn(task.organizationId, userId);
@@ -253,9 +262,21 @@ export async function approveOrgTask(taskId: unknown): Promise<Result<{ xpDelta:
   if (found.task.status !== "IN_REVIEW" || !assigneeId) return { ok: false, error: "Esta tarea no está en revisión." };
 
   try {
-    const outcome = await prisma.$transaction((tx) =>
-      payCompletion(tx, found.task.id, assigneeId, user.id, "IN_REVIEW"),
-    );
+    const outcome = await prisma.$transaction(async (tx) => {
+      const paid = await payCompletion(tx, found.task.id, assigneeId, user.id, "IN_REVIEW");
+      if (paid) {
+        await notifyReview(tx, {
+          type: "ORG_TASK_APPROVED",
+          userId: assigneeId,
+          organizationId: found.task.organizationId,
+          taskTitle: found.task.title,
+          actorName: user.firstName,
+          xp: paid.xpDelta,
+          level: paid.leveledUp ? paid.level : null,
+        });
+      }
+      return paid;
+    });
     if (!outcome) return { ok: false, error: "Esta tarea no está en revisión." };
     revalidateBoard();
     return { ok: true, xpDelta: outcome.xpDelta };
@@ -274,11 +295,33 @@ export async function rejectOrgTask(taskId: unknown, note?: unknown): Promise<Re
   const parsed = reviewNoteSchema.safeParse(note ?? undefined);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Nota no válida." };
 
-  const { count } = await prisma.orgTask.updateMany({
-    where: { id: found.task.id, status: "IN_REVIEW" },
-    data: { status: "PENDING", submittedAt: null, reviewNote: parsed.data ?? null, reviewedById: user.id },
-  });
-  if (count === 0) return { ok: false, error: "Esta tarea no está en revisión." };
+  const { assigneeId } = found.task;
+  const reviewNote = parsed.data ?? null;
+
+  try {
+    const sentBack = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.orgTask.updateMany({
+        where: { id: found.task.id, status: "IN_REVIEW" },
+        data: { status: "PENDING", submittedAt: null, reviewNote, reviewedById: user.id },
+      });
+      if (count === 0) return false;
+      if (assigneeId) {
+        await notifyReview(tx, {
+          type: "ORG_TASK_CHANGES_REQUESTED",
+          userId: assigneeId,
+          organizationId: found.task.organizationId,
+          taskTitle: found.task.title,
+          actorName: user.firstName,
+          note: reviewNote,
+        });
+      }
+      return true;
+    });
+    if (!sentBack) return { ok: false, error: "Esta tarea no está en revisión." };
+  } catch (error) {
+    console.error("rejectOrgTask failed", error);
+    return GENERIC_ERROR;
+  }
 
   revalidateBoard();
   return { ok: true };

@@ -1,12 +1,17 @@
-import { Bell, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 
+import type { NotificationFeed } from "@/lib/notifications/server";
+
+import NotificationBell from "./NotificationBell";
 import SignOutButton from "./SignOutButton";
 
 interface AppNavbarProps {
   userName: string;
+  userId: string;
+  notifications: NotificationFeed;
 }
 
-export default function AppNavbar({ userName }: AppNavbarProps) {
+export default function AppNavbar({ userName, userId, notifications }: AppNavbarProps) {
   const firstName = userName.split(" ")[0];
 
   return (
@@ -32,9 +37,7 @@ export default function AppNavbar({ userName }: AppNavbarProps) {
       </div>
 
       <div className="flex gap-3">
-        <button className="rounded-full bg-slate-800 p-3" aria-label="Notificaciones">
-          <Bell size={18} />
-        </button>
+        <NotificationBell userId={userId} initialFeed={notifications} />
 
         <button className="rounded-full bg-slate-800 p-3" aria-label="Configuración">
           <Settings size={18} />

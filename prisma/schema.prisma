@@ -58,10 +58,11 @@ model User {
   memberships   Membership[]
   invitations   Invitation[]
 
-  assignedOrgTasks  OrgTask[] @relation("OrgTaskAssignee")
-  createdOrgTasks   OrgTask[] @relation("OrgTaskCreator")
-  completedOrgTasks OrgTask[] @relation("OrgTaskCompleter")
-  reviewedOrgTasks  OrgTask[] @relation("OrgTaskReviewer")
+  assignedOrgTasks  OrgTask[]      @relation("OrgTaskAssignee")
+  createdOrgTasks   OrgTask[]      @relation("OrgTaskCreator")
+  completedOrgTasks OrgTask[]      @relation("OrgTaskCompleter")
+  reviewedOrgTasks  OrgTask[]      @relation("OrgTaskReviewer")
+  notifications     Notification[]
 }
 
 model Task {
@@ -120,9 +121,10 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members     Membership[]
-  invitations Invitation[]
-  tasks       OrgTask[]
+  members       Membership[]
+  invitations   Invitation[]
+  tasks         OrgTask[]
+  notifications Notification[]
 }
 
 /// Exactly one OWNER per organization (the creator).
@@ -163,24 +165,24 @@ model Invitation {
 /// The assignee submits it for review; a manager approves it (pays XP to the assignee's personal level)
 /// or sends it back with a note. A manager reopening a completed task takes that XP back.
 model OrgTask {
-  id          String     @id @default(cuid())
-  title       String
-  description String?
-  difficulty  Difficulty @default(EASY)
-  xpReward    Int
-  status      OrgTaskStatus @default(PENDING)
-  dueDate     DateTime?
+  id           String        @id @default(cuid())
+  title        String
+  description  String?
+  difficulty   Difficulty    @default(EASY)
+  xpReward     Int
+  status       OrgTaskStatus @default(PENDING)
+  dueDate      DateTime?
   /// True when the assignee took it from the open pool (they may give it back).
-  selfAssigned Boolean   @default(false)
+  selfAssigned Boolean       @default(false)
   /// When the assignee sent it for review (null while pending).
-  submittedAt DateTime?
+  submittedAt  DateTime?
   /// Why a manager sent it back; shown to the assignee until they submit again.
-  reviewNote  String?
-  completedAt DateTime?
+  reviewNote   String?
+  completedAt  DateTime?
   /// XP actually paid on completion, so reopening reverses exactly that.
-  awardedXp   Int        @default(0)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  awardedXp    Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -195,4 +197,34 @@ model OrgTask {
 
   @@index([organizationId, status])
   @@index([assigneeId])
+}
+
+enum NotificationType {
+  ORG_TASK_APPROVED
+  ORG_TASK_CHANGES_REQUESTED
+}
+
+/// Something that happened to the user's work while they weren't looking (e.g. a manager reviewed it).
+/// Task details are copied so the message still reads right after the task is edited or deleted.
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  taskTitle String
+  /// XP paid to the recipient (approvals only).
+  xp        Int              @default(0)
+  /// The recipient's new level when the approval made them level up.
+  level     Int?
+  /// The reviewer's comments when they asked for changes.
+  note      String?
+  /// First name of whoever reviewed it, as it was at the time.
+  actorName String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
