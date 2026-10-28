@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import CalendarView from "@/components/calendar/CalendarView";
-import { monthLabel, monthParam, parseMonthParam, shiftMonth } from "@/lib/calendar";
+import { monthLabel, monthParam, parseDayParam, parseMonthParam, shiftMonth } from "@/lib/calendar";
 import { getCalendarMonth } from "@/lib/data/calendar";
 import { dayKey } from "@/lib/dates";
 import { requireUser } from "@/lib/session";
@@ -15,9 +15,16 @@ export const metadata: Metadata = {
 const navClass =
   "grid size-10 place-items-center rounded-xl border border-slate-800 text-slate-300 transition-[background-color,transform] duration-150 hover:bg-slate-800 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:outline-none";
 
-export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ mes?: string | string[] }> }) {
+interface CalendarPageProps {
+  searchParams: Promise<{ mes?: string | string[]; dia?: string | string[] }>;
+}
+
+export default async function CalendarPage({ searchParams }: CalendarPageProps) {
   const user = await requireUser();
-  const month = parseMonthParam((await searchParams).mes);
+  const params = await searchParams;
+  const day = parseDayParam(params.dia);
+  // A day without a month opens that day's month (links from the dashboard).
+  const month = parseMonthParam(params.mes ?? day?.slice(0, 7));
   const data = await getCalendarMonth(user.id, month);
   const today = dayKey(new Date());
   const current = monthParam(month);
@@ -53,7 +60,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
         </nav>
       </header>
 
-      <CalendarView key={current} month={month} today={today} data={data} userId={user.id} />
+      <CalendarView key={current} month={month} today={today} data={data} userId={user.id} initialDay={day} />
     </div>
   );
 }

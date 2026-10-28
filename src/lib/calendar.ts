@@ -54,6 +54,20 @@ export function monthGrid({ year, month }: YearMonth): CalendarDay[] {
   });
 }
 
+/** The day key `delta` days after `key` (negative goes back). */
+export function addDays(key: string, delta: number): string {
+  const date = new Date(`${key}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return utcKey(date);
+}
+
+/** A "YYYY-MM-DD" from the URL, or null when it isn't a real date. */
+export function parseDayParam(param: string | string[] | undefined): string | null {
+  if (typeof param !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(param)) return null;
+  const date = new Date(`${param}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && utcKey(date) === param ? param : null;
+}
+
 /** First and last day keys shown by monthGrid, inclusive. */
 export function gridRange(ym: YearMonth): { from: string; to: string } {
   const grid = monthGrid(ym);
@@ -67,6 +81,23 @@ const longDayFormatter = new Intl.DateTimeFormat("es-MX", {
   month: "long",
   timeZone: "UTC",
 });
+
+const weekdayFormatter = new Intl.DateTimeFormat("es-MX", { weekday: "short", timeZone: "UTC" });
+const shortMonthFormatter = new Intl.DateTimeFormat("es-MX", { month: "short", timeZone: "UTC" });
+
+/** "mié" */
+export function weekdayLabel(key: string): string {
+  return weekdayFormatter.format(new Date(`${key}T00:00:00.000Z`)).replace(".", "");
+}
+
+/** "Hoy", "Mañana" or "vie 30 oct" */
+export function relativeDayLabel(key: string, today: string): string {
+  if (key === today) return "Hoy";
+  if (key === addDays(today, 1)) return "Mañana";
+  const date = new Date(`${key}T00:00:00.000Z`);
+  const month = shortMonthFormatter.format(date).replace(".", "");
+  return `${weekdayLabel(key)} ${date.getUTCDate()} ${month}`;
+}
 
 /** "octubre de 2026" */
 export function monthLabel({ year, month }: YearMonth): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getCalendarMonth } from "@/lib/data/calendar";
+import { getCalendarMonth, getUpcomingDeadlines } from "@/lib/data/calendar";
 import { dueDateFromInput } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 
@@ -122,5 +122,83 @@ describe("getCalendarMonth", () => {
     expect(orgTasks).toEqual([
       expect.objectContaining({ title: "Hecha", status: "COMPLETED", completedBy: expect.objectContaining({ userId: me.id }) }),
     ]);
+  });
+});
+
+describe("getUpcomingDeadlines", () => {
+  const TODAY = "2026-10-28";
+
+  async function team() {
+    const owner = await createUser();
+    const member = await createUser();
+    const outsider = await createUser();
+    const organization = await prisma.organization.create({ data: { name: "Equipo", slug: `equipo-${Date.now()}` } });
+    const other = await prisma.organization.create({ data: { name: "Otra", slug: `otra-${Date.now()}` } });
+    await prisma.membership.createMany({
+      data: [
+        { organizationId: organization.id, userId: owner.id, role: "OWNER" },
+        { organizationId: organization.id, userId: member.id, role: "MEMBER" },
+        { organizationId: other.id, userId: outsider.id, role: "OWNER" },
+      ],
+    });
+    const orgTask = (
+      organizationId: string,
+      title: string,
+      assigneeId: string | null,
+      dueDate: string,
+      status: "PENDING" | "IN_REVIEW" | "COMPLETED" = "PENDING",
+    ) =>
+      prisma.orgTask.create({
+        data: { organizationId, title, difficulty: "MEDIUM", xpReward: 25, assigneeId, status, dueDate: dueDateFromInput(dueDate) },
+      });
+    return { owner, member, organization, other, orgTask };
+  }
+
+  it("lists the next 7 days and the overdue pending ones, skipping what's done", async () => {
+    const me = await createUser();
+    await task(me.id, "Vencida", "2026-10-20");
+    await task(me.id, "Vencida hecha", "2026-10-21", "COMPLETED");
+    await task(me.id, "Hoy", TODAY);
+    await task(me.id, "Hoy hecha", TODAY, "COMPLETED");
+    await task(me.id, "En 6 días", "2026-11-03");
+    await task(me.id, "En 7 días", "2026-11-04");
+    await task(me.id, "Sin fecha", null);
+
+    const { days, overdue } = await getUpcomingDeadlines(me.id, TODAY);
+    expect(days.map((d) => d.key)).toEqual([
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+    ]);
+    expect(days.flatMap((d) => d.entries.map((e) => e.title))).toEqual(["Hoy", "En 6 días"]);
+    expect(overdue.map((e) => e.title)).toEqual(["Vencida"]);
+  });
+
+  it("shows managers the whole team and members only their own", async () => {
+    const { owner, member, organization, other, orgTask } = await team();
+    await orgTask(organization.id, "Del miembro", member.id, "2026-10-29");
+    await orgTask(organization.id, "Libre", null, "2026-10-30");
+    await orgTask(organization.id, "En revisión", member.id, "2026-10-31", "IN_REVIEW");
+    await orgTask(organization.id, "En revisión atrasada", member.id, "2026-10-01", "IN_REVIEW");
+    await orgTask(organization.id, "Atrasada", member.id, "2026-10-02");
+    await orgTask(organization.id, "Completada", member.id, "2026-10-29", "COMPLETED");
+    await orgTask(other.id, "De otra org", null, "2026-10-29");
+
+    const forOwner = await getUpcomingDeadlines(owner.id, TODAY);
+    expect(forOwner.days.flatMap((d) => d.entries.map((e) => e.title))).toEqual(["Del miembro", "Libre", "En revisión"]);
+    expect(forOwner.overdue.map((e) => e.title)).toEqual(["Atrasada"]);
+    expect(forOwner.days[1].entries[0]).toMatchObject({
+      kind: "org",
+      assignee: { userId: member.id },
+      organization: { name: "Equipo" },
+    });
+
+    const forMember = await getUpcomingDeadlines(member.id, TODAY);
+    expect(forMember.days.flatMap((d) => d.entries.map((e) => e.title))).toEqual(["Del miembro", "En revisión"]);
+    expect(forMember.overdue.map((e) => e.title)).toEqual(["Atrasada"]);
   });
 });

@@ -35,10 +35,10 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
 src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser() y getNotificationFeed()
-src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Misiones personales" (TaskList) y "Tareas de organizaciones" (OrgTasksSection)
+src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines), "Misiones personales" (TaskList) y "Tareas de organizaciones" (OrgTasksSection)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
-src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM: cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
+src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM&dia=YYYY-MM-DD (dia solo abre su mes y lo selecciona): cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
@@ -70,6 +70,8 @@ src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
 src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; Motion)
+src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
+src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
 src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
 src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
                             TaskFormSheet (crear/editar en Sheet; prop defaultDueDate), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
@@ -84,8 +86,8 @@ src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profile
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
-src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
-src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha
+src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
+src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha; getUpcomingDeadlines(userId, hoy, 7): pendientes (y de equipo en revisión) de hoy a +6 días + vencidas; visibleOrgTasks() = filtro compartido mías/gerente
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
@@ -255,6 +257,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 
 - 2026-10-28: Notificaciones guardadas en BD y creadas en la transacción de la revisión (no se pierden ni se duplican). Entrega por sondeo cada 30 s con la pestaña visible (sin WebSockets/SSE por ahora). Abrir la campana marca todo como leído. El último aviso mostrado como toast se recuerda en localStorage por usuario para no repetirlo al recargar.
 - 2026-10-28: Calendario por fecha límite (no por fecha de completado). El mes va en la URL (`?mes=`) para poder compartir/volver; el día seleccionado es estado del cliente. Muestra las tareas de equipo asignadas a mí, solo lectura (se gestionan en el tablero). Dueños y admins ven además todas las tareas con fecha de sus organizaciones (decisión del usuario 2026-10-28); los miembros solo las suyas. `TASK_MANAGER_ROLES` en permissions.ts. "Vencida" = pendiente con fecha pasada; las que están en revisión no cuentan. Las acciones de tareas y de equipo revalidan `/calendario`.
+- 2026-10-28: "Próximas fechas" en el dashboard usa la misma regla de visibilidad que el calendario (gerentes: todo el equipo; miembros: lo suyo). Solo lo que sigue abierto; las de equipo en revisión aparecen si vencen esta semana pero nunca como vencidas.
 
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
@@ -303,6 +306,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-28: Rama `feat/dashboard-upcoming` (sobre `feat/calendar-team`): sección "Próximas fechas" en el dashboard y `?dia=` en el calendario. 190 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/calendar-team` (sobre `feat/calendar`): dueños/admins ven las tareas de todo su equipo en el calendario; texto "Asignada a X" / "Realizada por X". 181 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/calendar` (sobre `main`): página /calendario, helpers puros de mes, completar/crear misiones desde el calendario, toasts de completar extraídos a `completion.tsx`. 180 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/org-task-notifications` (sobre `feat/org-task-review`): modelo Notification, aviso al aprobar ("¡Tarea aprobada! +X XP") o pedir cambios, campana en el navbar con contador y toasts. 163 pruebas pasan, build OK. Fusionada a `main` (fast-forward) con permiso del usuario.

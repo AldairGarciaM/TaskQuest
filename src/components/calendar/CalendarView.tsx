@@ -10,8 +10,10 @@ import { toggleTaskWithToasts } from "@/components/task/completion";
 import TaskFormSheet from "@/components/task/TaskFormSheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { dayLabel, monthGrid, WEEKDAY_LABELS, type CalendarDay, type YearMonth } from "@/lib/calendar";
-import type { CalendarMonth, CalendarOrgTask, CalendarPerson } from "@/lib/data/calendar";
+import type { CalendarMonth, CalendarOrgTask } from "@/lib/data/calendar";
 import { cn } from "@/lib/utils";
+
+import { ownership } from "./ownership";
 
 type PersonalTask = CalendarMonth["tasks"][number];
 
@@ -24,6 +26,8 @@ interface CalendarViewProps {
   data: CalendarMonth;
   /** The signed-in user, so their own team tasks read "ti". */
   userId: string;
+  /** Day to open on (from `?dia=`); ignored when it isn't on this month's grid. */
+  initialDay?: string | null;
 }
 
 /** Chips a day cell shows before collapsing the rest into "+N". */
@@ -51,12 +55,17 @@ function applyToggle(tasks: PersonalTask[], change: { id: string; completed: boo
   );
 }
 
-export default function CalendarView({ month, today, data, userId }: CalendarViewProps) {
+export default function CalendarView({ month, today, data, userId, initialDay }: CalendarViewProps) {
   const reduceMotion = useReducedMotion();
   const [tasks, applyOptimistic] = useOptimistic(data.tasks, applyToggle);
   const [, startTransition] = useTransition();
   const grid = monthGrid(month);
-  const [selected, setSelected] = useState(() => grid.find((d) => d.key === today)?.key ?? grid.find((d) => d.inMonth)!.key);
+  const [selected, setSelected] = useState(
+    () =>
+      grid.find((d) => d.key === initialDay)?.key ??
+      grid.find((d) => d.key === today)?.key ??
+      grid.find((d) => d.inMonth)!.key,
+  );
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const cells = useRef(new Map<string, HTMLButtonElement>());
@@ -355,19 +364,6 @@ function PersonalRow({
       </span>
     </div>
   );
-}
-
-function personName(person: CalendarPerson, userId: string) {
-  return person.userId === userId ? "ti" : `${person.firstName} ${person.lastName}`;
-}
-
-/** "Asignada a …" while the task is still open, "Realizada por …" once it's done. */
-function ownership(task: CalendarOrgTask, userId: string): string {
-  if (task.status === "COMPLETED") {
-    const by = task.completedBy ?? task.assignee;
-    return by ? `Realizada por ${personName(by, userId)}` : "Realizada";
-  }
-  return task.assignee ? `Asignada a ${personName(task.assignee, userId)}` : "Libre: nadie la ha tomado";
 }
 
 function OrgRow({ task, overdue, userId }: { task: CalendarOrgTask; overdue: boolean; userId: string }) {

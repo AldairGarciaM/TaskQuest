@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { dayLabel, gridRange, monthGrid, monthLabel, monthParam, parseMonthParam, shiftMonth } from "@/lib/calendar";
+import {
+  addDays,
+  dayLabel,
+  gridRange,
+  monthGrid,
+  monthLabel,
+  monthParam,
+  parseDayParam,
+  parseMonthParam,
+  relativeDayLabel,
+  shiftMonth,
+  weekdayLabel,
+} from "@/lib/calendar";
 
 describe("parseMonthParam", () => {
   const now = new Date("2026-10-28T18:00:00Z");
@@ -58,5 +70,30 @@ describe("labels", () => {
   it("formats in Spanish without shifting the day", () => {
     expect(monthLabel({ year: 2026, month: 10 })).toBe("octubre de 2026");
     expect(dayLabel("2026-10-28")).toBe("miércoles, 28 de octubre");
+  });
+});
+
+describe("day helpers", () => {
+  it("adds days across months and years", () => {
+    expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
+  });
+
+  it.each([
+    ["2026-10-28", "2026-10-28"],
+    ["2026-02-30", null],
+    ["2026-1-05", null],
+    [undefined, null],
+    [["2026-10-28"], null],
+  ])("parseDayParam(%j) → %j", (param, expected) => {
+    expect(parseDayParam(param as string | undefined)).toBe(expected);
+  });
+
+  it("labels days relative to today", () => {
+    expect(relativeDayLabel("2026-10-28", "2026-10-28")).toBe("Hoy");
+    expect(relativeDayLabel("2026-10-29", "2026-10-28")).toBe("Mañana");
+    expect(relativeDayLabel("2026-10-30", "2026-10-28")).toBe("vie 30 oct");
+    expect(weekdayLabel("2026-10-28")).toBe("mié");
   });
 });
