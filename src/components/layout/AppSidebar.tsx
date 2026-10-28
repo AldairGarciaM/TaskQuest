@@ -48,6 +48,7 @@ const menuItems = [
   {
     label: "Historial",
     icon: History,
+    href: "/historial",
   },
 ];
 
