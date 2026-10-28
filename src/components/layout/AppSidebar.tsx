@@ -43,6 +43,7 @@ const menuItems = [
   {
     label: "Estadísticas",
     icon: BarChart3,
+    href: "/estadisticas",
   },
   {
     label: "Historial",

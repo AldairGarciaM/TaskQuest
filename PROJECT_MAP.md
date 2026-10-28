@@ -39,6 +39,7 @@ src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísti
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM&dia=YYYY-MM-DD (dia solo abre su mes y lo selecciona): cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
+src/app/(dashboard)/estadisticas/page.tsx  /estadisticas?rango=7|30|90: XP del periodo vs anterior, completadas, % a tiempo, racha actual/mejor, XP por día/semana (apilada), por dificultad, por día de la semana
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
@@ -70,6 +71,7 @@ src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
 src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; Motion)
+src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, tooltip por hover/foco, etiqueta solo en el pico, "Ver como tabla"), chart-utils (niceMax, compact, SERIES_COLORS validados)
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
 src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
@@ -88,6 +90,8 @@ src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
 src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
 src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha; getUpcomingDeadlines(userId, hoy, 7): pendientes (y de equipo en revisión) de hoy a +6 días + vencidas; visibleOrgTasks() = filtro compartido mías/gerente
+src/lib/stats.ts            STAT_RANGES, parseRangeParam, summarize(eventos, rango, hoy) → buckets diarios (≤30) o semanales (90), longestStreak, percentChange (puro)
+src/lib/data/stats.ts       getStats(userId, rango, hoy): eventos de XP (misiones, tareas de equipo que completé, bonos diarios) del doble del rango + rachas
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
@@ -138,6 +142,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 |---|---|---|
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
 | `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; `?mes=YYYY-MM` |
+| `/estadisticas` | `src/app/(dashboard)/estadisticas/page.tsx` | Protegida; `?rango=7|30|90` (30 por defecto) |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
 | `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking |
@@ -147,7 +152,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
-Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario; "Pronto": Estadísticas, Historial. Las subrutas resaltan su sección.
+Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadísticas; "Pronto": Historial. Las subrutas resaltan su sección.
 
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
@@ -258,6 +263,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-28: Notificaciones guardadas en BD y creadas en la transacción de la revisión (no se pierden ni se duplican). Entrega por sondeo cada 30 s con la pestaña visible (sin WebSockets/SSE por ahora). Abrir la campana marca todo como leído. El último aviso mostrado como toast se recuerda en localStorage por usuario para no repetirlo al recargar.
 - 2026-10-28: Calendario por fecha límite (no por fecha de completado). El mes va en la URL (`?mes=`) para poder compartir/volver; el día seleccionado es estado del cliente. Muestra las tareas de equipo asignadas a mí, solo lectura (se gestionan en el tablero). Dueños y admins ven además todas las tareas con fecha de sus organizaciones (decisión del usuario 2026-10-28); los miembros solo las suyas. `TASK_MANAGER_ROLES` en permissions.ts. "Vencida" = pendiente con fecha pasada; las que están en revisión no cuentan. Las acciones de tareas y de equipo revalidan `/calendario`.
 - 2026-10-28: "Próximas fechas" en el dashboard usa la misma regla de visibilidad que el calendario (gerentes: todo el equipo; miembros: lo suyo). Solo lo que sigue abierto; las de equipo en revisión aparecen si vencen esta semana pero nunca como vencidas.
+- 2026-10-28: Estadísticas sin librería de gráficas (HTML + Tailwind) para no sumar dependencias. Colores de series validados con el checker de dataviz sobre slate-900: personal #8b5cf6, bonos #d97706, equipo #0284c7 (en ese orden de apilado). La XP cuenta lo que sigue cobrado hoy (descompletar resta). Racha = solo misiones personales (igual que el dashboard). "A tiempo" = completada el día límite o antes (APP_TIME_ZONE).
 
 ## Pendientes / deuda técnica
 En curso — organizaciones (idea del usuario 2026-10-26)
@@ -288,7 +294,9 @@ Prioridad 2 — funcionalidad
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
 - [x] Misiones diarias, racha y logros.
 - [x] Calendario mensual.
-- [ ] Estadísticas, historial (en el menú como "Pronto").
+- [x] Estadísticas personales.
+- [ ] Historial (en el menú como "Pronto").
+- [ ] Estadísticas de equipo para dueños/admins.
 - [ ] Calendario: arrastrar para cambiar la fecha, vista semanal.
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
@@ -306,6 +314,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-28: Rama `feat/stats` (sobre `main`): página /estadisticas con indicadores y gráficas. 201 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/dashboard-upcoming` (sobre `feat/calendar-team`): sección "Próximas fechas" en el dashboard y `?dia=` en el calendario. 190 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/calendar-team` (sobre `feat/calendar`): dueños/admins ven las tareas de todo su equipo en el calendario; texto "Asignada a X" / "Realizada por X". 181 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/calendar` (sobre `main`): página /calendario, helpers puros de mes, completar/crear misiones desde el calendario, toasts de completar extraídos a `completion.tsx`. 180 pruebas pasan, build OK.
