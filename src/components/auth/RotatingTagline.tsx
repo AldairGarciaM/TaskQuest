@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 
 const TAGLINES: { lead: string; highlight: string }[] = [
@@ -12,57 +12,107 @@ const TAGLINES: { lead: string; highlight: string }[] = [
   { lead: "Menos procrastinar,", highlight: "más subir de nivel." },
 ];
 
-const INTERVAL_MS = 4500;
-const EASE_OUT = [0.23, 1, 0.32, 1] as const;
+const fullText = (i: number) => `${TAGLINES[i].lead} ${TAGLINES[i].highlight}`;
 
-function Tagline({ index }: { index: number }) {
-  const { lead, highlight } = TAGLINES[index];
+/** Milliseconds per keystroke, with a little jitter so it reads like a person typing. */
+function typingDelay(typed: string): number {
+  const last = typed.at(-1);
+  if (last === "," || last === ".") return 320;
+  if (last === " ") return 110;
+  return 45 + Math.random() * 55;
+}
+const DELETE_DELAY = 22;
+const HOLD_MS = 2400;
+const BEFORE_NEXT_MS = 450;
+
+type Phase = "typing" | "holding" | "deleting";
+
+function Tagline({ index, typed, blink }: { index: number; typed: number; blink: boolean }) {
+  const { lead } = TAGLINES[index];
+  const text = fullText(index);
+  const split = lead.length + 1;
+  const leadEnd = Math.min(typed, split);
+  const highlightEnd = Math.max(typed, split);
+  // Untyped characters stay in the layout (invisible) so lines break where the finished phrase will.
+  // Zero-width anchor: the caret never pushes text around. Solid while typing, blinks while idle.
+  const caret = (
+    <span className="relative">
+      <span
+        className={`absolute -top-[0.05em] left-0.5 h-[1.05em] w-[3px] rounded-full bg-yellow-300 ${blink ? "animate-caret-blink motion-reduce:animate-none" : ""}`}
+      />
+    </span>
+  );
+
   return (
     <>
-      {lead} <span className="text-yellow-300">{highlight}</span>
+      {text.slice(0, leadEnd)}
+      {typed < split && caret}
+      <span className="invisible">{text.slice(leadEnd, split)}</span>
+      <span className="text-yellow-300">{text.slice(split, highlightEnd)}</span>
+      {typed >= split && caret}
+      <span className="invisible">{text.slice(highlightEnd)}</span>
     </>
   );
 }
 
-/** Brand headline that cycles through taglines; stays on the first one with reduced motion. */
+/**
+ * Brand headline typed out like on a keyboard: types a tagline, holds it, deletes it and moves on.
+ * With reduced motion it just shows the first tagline.
+ */
 export default function RotatingTagline() {
   const reduceMotion = useReducedMotion();
-  const [index, setIndex] = useState(0);
+  const [state, setState] = useState<{ index: number; typed: number; phase: Phase }>({
+    index: 0,
+    typed: 0,
+    phase: "typing",
+  });
 
   useEffect(() => {
     if (reduceMotion) return;
-    const id = setInterval(() => {
-      // Don't burn through taglines while nobody is looking.
-      if (document.visibilityState === "visible") setIndex((i) => (i + 1) % TAGLINES.length);
-    }, INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [reduceMotion]);
+    const { index, typed, phase } = state;
+    const text = fullText(index);
+
+    let delay: number;
+    let next: typeof state;
+    if (phase === "typing") {
+      delay = typed === 0 ? BEFORE_NEXT_MS : typingDelay(text.slice(0, typed));
+      next = typed + 1 >= text.length ? { index, typed: text.length, phase: "holding" } : { index, typed: typed + 1, phase };
+    } else if (phase === "holding") {
+      delay = HOLD_MS;
+      next = { index, typed, phase: "deleting" };
+    } else {
+      delay = DELETE_DELAY;
+      next =
+        typed <= 1
+          ? { index: (index + 1) % TAGLINES.length, typed: 0, phase: "typing" }
+          : { index, typed: typed - 1, phase };
+    }
+
+    const id = setTimeout(() => {
+      // Wait while the tab is hidden instead of typing to nobody.
+      if (document.visibilityState === "visible") setState(next);
+      else setState({ ...state });
+    }, delay);
+    return () => clearTimeout(id);
+  }, [state, reduceMotion]);
+
+  const index = reduceMotion ? 0 : state.index;
+  const typed = reduceMotion ? fullText(0).length : state.typed;
 
   return (
     <h2 className="text-4xl leading-tight font-bold text-balance">
-      {/* Screen readers get one stable headline instead of a changing one. */}
-      <span className="sr-only">
-        <Tagline index={0} />
-      </span>
+      {/* Screen readers get one stable headline instead of a stream of letters. */}
+      <span className="sr-only">{fullText(0)}</span>
       <span aria-hidden className="grid">
         {/* Every tagline sits in the same cell so the tallest one sets the height: no layout jump. */}
         {TAGLINES.map((_, i) => (
           <span key={i} className="invisible [grid-area:1/1]">
-            <Tagline index={i} />
+            {fullText(i)}
           </span>
         ))}
-        <AnimatePresence initial={false}>
-          <motion.span
-            key={reduceMotion ? 0 : index}
-            className="[grid-area:1/1]"
-            initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: -12, filter: "blur(4px)" }}
-            transition={{ duration: 0.5, ease: EASE_OUT }}
-          >
-            <Tagline index={reduceMotion ? 0 : index} />
-          </motion.span>
-        </AnimatePresence>
+        <span className="[grid-area:1/1]">
+          <Tagline index={index} typed={typed} blink={reduceMotion || state.phase === "holding"} />
+        </span>
       </span>
     </h2>
   );
