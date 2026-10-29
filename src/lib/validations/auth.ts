@@ -63,3 +63,18 @@ export const resetTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, { error: "Ingresa tu contraseña actual" })
+      .max(PASSWORD_MAX, { error: "Contraseña demasiado larga" }),
+    newPassword: passwordSchema,
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    path: ["newPassword"],
+    error: "Elige una contraseña distinta a la actual",
+  });
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

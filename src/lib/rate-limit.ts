@@ -18,6 +18,8 @@ export const REGISTER_IP_LIMIT: RateLimitRule = { limit: 5, windowMs: 60 * MINUT
 export const PASSWORD_RESET_EMAIL_LIMIT: RateLimitRule = { limit: 3, windowMs: 60 * MINUTE };
 /** Reset requests per IP, across addresses. */
 export const PASSWORD_RESET_IP_LIMIT: RateLimitRule = { limit: 10, windowMs: 60 * MINUTE };
+/** Wrong current passwords when changing it, so a stolen session can't guess the password. */
+export const PASSWORD_CHANGE_USER_LIMIT: RateLimitRule = { limit: 5, windowMs: 15 * MINUTE };
 /** Invitations each person can send, across all their organizations. */
 export const INVITE_USER_LIMIT: RateLimitRule = { limit: 20, windowMs: 60 * MINUTE };
 

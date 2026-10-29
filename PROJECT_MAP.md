@@ -41,12 +41,15 @@ src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM&dia=YYYY-MM-DD (dia solo abre su mes y lo selecciona): cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
 src/app/(dashboard)/estadisticas/page.tsx  /estadisticas?rango=7|30|90: XP del periodo vs anterior, completadas, % a tiempo, racha actual/mejor, XP por día/semana (apilada), por dificultad, por día de la semana
 src/app/(dashboard)/historial/page.tsx  /historial?filtro=all|missions|team|achievements&antes=ISO: actividad agrupada por día (Hoy/Ayer/…) con XP del día, "Ver más antiguas"
+src/app/(dashboard)/configuracion/page.tsx  /configuracion: datos de la cuenta (solo lectura) + cambiar contraseña
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
 src/app/(dashboard)/organizaciones/[slug]/organization.ts loadOrganization(slug) con cache(); no miembro → redirect a la lista
 src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del equipo + ranking
 src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  miembros, invitar, pendientes, salir/eliminar
+src/app/actions/account.ts  changePassword
+src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login)
 src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
 src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
@@ -153,6 +156,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; `?mes=YYYY-MM` |
 | `/estadisticas` | `src/app/(dashboard)/estadisticas/page.tsx` | Protegida; `?rango=7|30|90` (30 por defecto) |
 | `/historial` | `src/app/(dashboard)/historial/page.tsx` | Protegida; `?filtro=` y `?antes=` |
+| `/configuracion` | `src/app/(dashboard)/configuracion/page.tsx` | Protegida; botón de engrane del navbar |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
 | `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking |
@@ -173,6 +177,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, límite 5/hora por IP (antes de revisar ocupados), revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
 | `requestPasswordReset({email})` | `src/app/auth/actions.ts` | Siempre `{ok:true}` exista o no la cuenta. Límite 3/hora por correo y 10/hora por IP. Borra los enlaces anteriores y crea uno (60 min); lo envía por correo (sin SMTP → consola, nunca en la UI) |
 | `resetPassword(token, {password})` | idem | Transacción: valida token vigente, lo marca usado con update condicional (un solo uso en paralelo), cambia el hash, incrementa `sessionVersion` (cierra todas las sesiones) y borra los demás enlaces; limpia el bloqueo de login de la cuenta. Inválido/vencido → `{expired: true}` |
+| `changePassword({currentPassword, newPassword})` | `src/app/actions/account.ts` | Requiere sesión. Verifica la actual (5 fallos/15 min por usuario, luego bloquea); la nueva debe ser distinta. Cambia el hash, incrementa sessionVersion (cierra todas las sesiones) y borra enlaces de restablecimiento pendientes |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
@@ -227,6 +232,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Rate limiting en PostgreSQL (tabla RateLimit) y no en memoria: sobrevive reinicios y funciona con varias instancias sin Redis. Ventana fija con un solo `INSERT … ON CONFLICT` (sin carreras). El bloqueo por cuenta aplica también a cuentas inexistentes (no revela cuáles existen) y comparte clave entre correo y usuario. Sin IP en las cabeceras no se aplica el límite por IP (para no meter a todos en el mismo cubo).
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
+- 2026-10-29: Cambiar contraseña revoca también la sesión actual (sessionVersion es una sola por usuario); el cliente vuelve a iniciar sesión al instante con la nueva para no sacar a la persona. Desde /configuracion no se enlaza a /auth/recuperar porque el proxy redirige /auth/* a "/" con sesión.
 
 ## Variables de entorno
 Plantilla en `.env.example` (copiar a `.env`):
@@ -311,7 +317,8 @@ Prioridad 2 — funcionalidad
 - [x] Límite de intentos: login 5 fallos/15 min por cuenta y 30 intentos/15 min por IP; registro 5 cuentas/hora por IP.
 - [ ] Límite por IP depende de `x-real-ip`/`x-forwarded-for`: en producción confiar solo en los que pone el proxy (falsificables si no).
 - [x] Recuperar contraseña por correo; al cambiarla se cierran todas las sesiones.
-- [ ] Cambiar contraseña desde el perfil estando logueado (reutilizar `sessionVersion`).
+- [x] Cambiar contraseña desde /configuracion (cierra las demás sesiones; la actual se renueva).
+- [ ] Editar nombre, usuario o correo desde /configuracion (hoy solo lectura; cambiar correo debería confirmarse por correo).
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
@@ -338,6 +345,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-29: Rama `feat/change-password` (sobre `main`): página /configuracion, cambiar contraseña, engrane del navbar enlazado. 238 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/auth-taglines` (sobre `feat/password-reset`): la frase del panel de login/registro rota entre 6 mensajes con efecto de máquina de escribir. Build OK. `feat/rate-limit`, `feat/password-reset` y `feat/auth-taglines` fusionadas a `main` (fast-forward) con permiso del usuario.
 - 2026-10-29: Rama `feat/password-reset` (sobre `feat/rate-limit`): recuperar contraseña por correo, sessionVersion para revocar sesiones, avisos en el login. 232 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/rate-limit` (sobre `main`): tabla RateLimit, límites de login, registro e invitaciones. 220 pruebas pasan, build OK.
