@@ -89,7 +89,7 @@ export default async function HistoryPage({ searchParams }: HistoryPageProps) {
           <p className="text-slate-400">Todo lo que has conseguido, de lo más reciente a lo más antiguo.</p>
         </div>
 
-        <nav aria-label="Filtrar historial" className="flex rounded-xl border border-slate-800 bg-slate-900 p-1">
+        <nav aria-label="Filtrar historial" className="flex flex-wrap rounded-xl border border-slate-800 bg-slate-900 p-1">
           {HISTORY_FILTERS.map((value) => (
             <Link
               key={value}

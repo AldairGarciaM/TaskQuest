@@ -1,108 +1,14 @@
-"use client";
+import SidebarNav from "./SidebarNav";
 
-import {
-  Home,
-  CheckSquare,
-  Trophy,
-  Calendar,
-  BarChart3,
-  History,
-  Users,
-} from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-
-import { cn } from "@/lib/utils";
-
-const menuItems = [
-  {
-    label: "Dashboard",
-    icon: Home,
-    href: "/",
-  },
-  {
-    label: "Misiones",
-    icon: CheckSquare,
-    href: "/#missions-heading",
-  },
-  {
-    label: "Logros",
-    icon: Trophy,
-    href: "/logros",
-  },
-  {
-    label: "Organizaciones",
-    icon: Users,
-    href: "/organizaciones",
-  },
-  {
-    label: "Calendario",
-    icon: Calendar,
-    href: "/calendario",
-  },
-  {
-    label: "Estadísticas",
-    icon: BarChart3,
-    href: "/estadisticas",
-  },
-  {
-    label: "Historial",
-    icon: History,
-    href: "/historial",
-  },
-];
-
-const itemClass = "flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left";
-
+/** Fixed sidebar on large screens; smaller ones use MobileNav from the navbar. */
 export default function AppSidebar() {
-  const pathname = usePathname();
-
   return (
-    <aside className="w-72 border-r border-slate-800 bg-slate-950 p-6">
+    <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950 p-6 lg:block">
       <p className="mb-10 text-3xl font-bold">
         ⚔️ TaskQuest
       </p>
 
-      <nav aria-label="Principal">
-        <ul className="space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-
-            if (!item.href) {
-              return (
-                <li key={item.label}>
-                  <span aria-disabled="true" className={cn(itemClass, "cursor-default text-slate-600")}>
-                    <Icon size={20} aria-hidden />
-                    <span className="flex-1">{item.label}</span>
-                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] tracking-wide text-slate-500 uppercase">
-                      Pronto
-                    </span>
-                  </span>
-                </li>
-              );
-            }
-
-            // Nested pages (e.g. /organizaciones/[slug]) keep their section highlighted.
-            const active = item.href === pathname || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
-            return (
-              <li key={item.label}>
-                <Link
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    itemClass,
-                    "transition-colors duration-150",
-                    active ? "bg-slate-800 text-slate-50" : "text-slate-300 hover:bg-slate-800/60",
-                  )}
-                >
-                  <Icon size={20} aria-hidden />
-                  <span>{item.label}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <SidebarNav />
     </aside>
   );
 }

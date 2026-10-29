@@ -86,7 +86,7 @@ export default function TaskList({ tasks }: { tasks: TaskDTO[] }) {
           Misiones personales
         </h2>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div role="group" aria-label="Filtrar misiones" className="flex rounded-xl bg-slate-950/60 p-1">
             {(
               [

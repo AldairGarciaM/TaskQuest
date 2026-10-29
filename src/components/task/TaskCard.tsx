@@ -58,8 +58,8 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
     >
       <div className={cn("absolute top-0 left-0 h-full w-1", completed ? "bg-slate-700" : style.color)} />
 
-      <CardContent className="p-6 pl-8">
-        <div className="flex items-start gap-4">
+      <CardContent className="p-4 pl-6 sm:p-6 sm:pl-8">
+        <div className="flex items-start gap-3 sm:gap-4">
           <Checkbox
             checked={completed}
             onCheckedChange={(checked) => onToggle(task, checked)} 
@@ -70,7 +70,7 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
           <div className="min-w-0 flex-1 space-y-2">
             <h3
               className={cn(
-                "text-lg font-semibold break-words",
+                "text-base font-semibold break-words sm:text-lg",
                 completed ? "text-slate-500 line-through" : "text-amber-100",
               )}
             >
@@ -82,7 +82,7 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
             )}
           </div>
 
-          <span className={cn("text-xl font-bold whitespace-nowrap", completed ? "text-slate-500" : "text-green-400")}>
+          <span className={cn("text-base font-bold whitespace-nowrap sm:text-xl", completed ? "text-slate-500" : "text-green-400")}>
             +{task.xpReward} XP
           </span>
 
@@ -114,7 +114,7 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
           </DropdownMenu>
         </div>
 
-        <div className="mt-4 flex items-center justify-between pl-9">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pl-8 sm:pl-9">
           <Badge className={style.badge}>
             <DifficultyIcon aria-hidden="true" />
             {style.label}

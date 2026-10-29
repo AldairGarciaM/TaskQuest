@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import type { NotificationFeed } from "@/lib/notifications/server";
 
+import MobileNav from "./MobileNav";
 import NotificationBell from "./NotificationBell";
 import SignOutButton from "./SignOutButton";
 
@@ -16,28 +17,22 @@ export default function AppNavbar({ userName, userId, notifications }: AppNavbar
   const firstName = userName.split(" ")[0];
 
   return (
-    <header
-      className="
-        flex
-        h-20
-        items-center
-        justify-between
-        border-b
-        border-slate-800
-        px-8
-      "
-    >
-      <div>
-        <h2 className="text-2xl font-bold">
-          ¡Hola, {firstName}! 👋
-        </h2>
+    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 sm:px-6 lg:h-20 lg:px-8">
+      <div className="flex min-w-0 items-center gap-3">
+        <MobileNav />
 
-        <p className="text-slate-400">
-          Listo para completar algunas misiones.
-        </p>
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-bold sm:text-2xl">
+            ¡Hola, {firstName}! 👋
+          </h2>
+
+          <p className="hidden truncate text-slate-400 sm:block">
+            Listo para completar algunas misiones.
+          </p>
+        </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex shrink-0 gap-2 sm:gap-3">
         <NotificationBell userId={userId} initialFeed={notifications} />
 
         <Link

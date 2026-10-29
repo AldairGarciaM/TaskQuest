@@ -17,7 +17,7 @@ export default function DashboardError({
   return (
     <div
       role="alert"
-      className="mx-auto mt-16 flex max-w-md flex-col items-center rounded-2xl border border-slate-800 bg-slate-900 px-8 py-12 text-center"
+      className="mx-auto mt-16 flex max-w-md flex-col items-center rounded-2xl border border-slate-800 bg-slate-900 px-6 py-12 text-center sm:px-8"
     >
       <span className="grid size-14 place-items-center rounded-2xl bg-rose-500/10 text-rose-400">
         <TriangleAlert className="size-7" aria-hidden />

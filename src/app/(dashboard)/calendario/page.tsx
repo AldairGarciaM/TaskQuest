@@ -39,7 +39,7 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
           <p className="text-slate-400">Tus misiones y las tareas de tus equipos según su fecha límite.</p>
         </div>
 
-        <nav aria-label="Cambiar de mes" className="flex items-center gap-2">
+        <nav aria-label="Cambiar de mes" className="flex flex-wrap items-center gap-2">
           <Link href={`/calendario?mes=${monthParam(shiftMonth(month, -1))}`} aria-label="Mes anterior" className={navClass}>
             <ChevronLeft size={18} aria-hidden />
           </Link>

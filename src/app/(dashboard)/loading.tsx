@@ -17,7 +17,7 @@ export default function DashboardLoading() {
                 <Block className="h-9 w-56" />
               </div>
               <Block className="h-2.5 w-full rounded-full" />
-              <Block className="h-4 w-64" />
+              <Block className="h-4 w-full max-w-64" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-px border-t border-slate-800 bg-slate-800 lg:grid-cols-4">
@@ -25,7 +25,7 @@ export default function DashboardLoading() {
               <div key={i} className="space-y-3 bg-slate-900 p-5">
                 <Block className="h-4 w-24" />
                 <Block className="h-7 w-14" />
-                <Block className="h-3 w-36" />
+                <Block className="h-3 w-full max-w-36" />
               </div>
             ))}
           </div>

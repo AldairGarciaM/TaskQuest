@@ -69,7 +69,7 @@ export default async function StatsPage({ searchParams }: StatsPageProps) {
           <p className="text-slate-400">Cómo vas ganando XP y qué días rindes más.</p>
         </div>
 
-        <nav aria-label="Periodo" className="flex rounded-xl border border-slate-800 bg-slate-900 p-1">
+        <nav aria-label="Periodo" className="flex flex-wrap rounded-xl border border-slate-800 bg-slate-900 p-1">
           {STAT_RANGES.map((value) => (
             <Link
               key={value}
