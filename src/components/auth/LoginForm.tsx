@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { z } from "zod";
 
+import { LOGIN_RATE_LIMITED } from "@/lib/rate-limit-messages";
 import { loginSchema, type LoginInput } from "@/lib/validations/auth";
 
 import FormField from "@/components/form/FormField";
@@ -41,8 +42,12 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
     startTransition(async () => {
       const result = await signIn("credentials", { ...parsed.data, redirect: false });
 
-      if (!result?.ok) {
-        setFormError("Usuario, correo o contraseña incorrectos.");
+      if (!result?.ok || result.error) {
+        setFormError(
+          result?.error === LOGIN_RATE_LIMITED
+            ? "Demasiados intentos. Espera unos minutos antes de volver a intentarlo."
+            : "Usuario, correo o contraseña incorrectos.",
+        );
         return;
       }
 

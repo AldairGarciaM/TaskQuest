@@ -1,9 +1,11 @@
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { clientIp, hit, REGISTER_IP_LIMIT, retryAfterLabel } from "@/lib/rate-limit";
 import { hashPassword, takenProfileFields, type ProfileFieldErrors } from "@/lib/user";
 import { registerSchema } from "@/lib/validations/auth";
 
@@ -24,6 +26,18 @@ export async function registerUser(input: unknown): Promise<RegisterResult> {
   const parsed = registerSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+
+  // Counted before the "already taken" check, which would otherwise let anyone probe for accounts.
+  const ip = clientIp(await headers());
+  if (ip) {
+    const limit = await hit(`register:ip:${ip}`, REGISTER_IP_LIMIT);
+    if (!limit.allowed) {
+      return {
+        ok: false,
+        formError: `Se crearon demasiadas cuentas desde esta conexión. Intenta de nuevo en ${retryAfterLabel(limit.resetAt)}.`,
+      };
+    }
   }
 
   const { firstName, lastName, username, email, password } = parsed.data;

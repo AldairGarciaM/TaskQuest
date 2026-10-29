@@ -228,3 +228,14 @@ model Notification {
 
   @@index([userId, createdAt])
 }
+
+/// Fixed-window counters for rate limiting (login attempts, sign-ups, invitations).
+/// `key` names the action and who does it, e.g. "login:account:ada" or "invite:<userId>".
+model RateLimit {
+  key     String   @id
+  count   Int
+  /// When the current window ends; the next hit after it starts a new window.
+  resetAt DateTime @db.Timestamptz(3)
+
+  @@index([resetAt])
+}

@@ -21,6 +21,7 @@ import {
   organizationSlug,
 } from "@/lib/organizations/tokens";
 import { prisma } from "@/lib/prisma";
+import { hit, INVITE_USER_LIMIT, retryAfterLabel } from "@/lib/rate-limit";
 import { requireUser } from "@/lib/session";
 import {
   assignableRoleSchema,
@@ -118,6 +119,15 @@ export async function inviteMember(
     select: { id: true },
   });
   if (alreadyMember) return { ok: false, fieldErrors: { email: ["Esa persona ya es miembro"] } };
+
+  // Every invitation can send an email, so cap them per person to keep this from becoming a spam relay.
+  const limit = await hit(`invite:user:${user.id}`, INVITE_USER_LIMIT);
+  if (!limit.allowed) {
+    return {
+      ok: false,
+      error: `Llegaste al límite de ${INVITE_USER_LIMIT.limit} invitaciones por hora. Intenta de nuevo en ${retryAfterLabel(limit.resetAt)}.`,
+    };
+  }
 
   const token = createInvitationToken();
   let organizationName: string;

@@ -12,6 +12,7 @@ import {
 } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
 import { MAX_OWNED_ORGANIZATIONS } from "@/lib/organizations/permissions";
+import { INVITE_USER_LIMIT } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
 import { createSignedInUser, createUser, signInAs, signOut } from "./helpers";
@@ -142,6 +143,34 @@ describe("inviteMember", () => {
       ok: false,
       error: "No encontramos esa organización.",
     });
+  });
+
+  it("caps how many invitations one person sends per hour, across organizations", async () => {
+    await createSignedInUser();
+    const alfa = await newOrganization("Alfa");
+    const beta = await newOrganization("Beta");
+    for (let i = 0; i < INVITE_USER_LIMIT.limit; i++) {
+      await invite(i % 2 ? alfa.id : beta.id, `persona${i}@correo.com`);
+    }
+
+    const blocked = await inviteMember(alfa.id, { email: "una-mas@correo.com", role: "MEMBER" });
+    expect(blocked.ok).toBe(false);
+    expect(!blocked.ok && blocked.error).toMatch(/límite de 20 invitaciones por hora.*\d+ min/);
+    expect(await prisma.invitation.count()).toBe(INVITE_USER_LIMIT.limit);
+
+    // Someone else in the same organization has their own allowance.
+    const admin = await createUser();
+    await addMember(alfa.id, admin, "ADMIN");
+    signInAs(admin);
+    expect((await inviteMember(alfa.id, { email: "una-mas@correo.com", role: "MEMBER" })).ok).toBe(true);
+  });
+
+  it("doesn't count invitations refused before sending", async () => {
+    await createSignedInUser();
+    const organization = await newOrganization();
+    await inviteMember(organization.id, { email: "a@correo.com", role: "OWNER" });
+    await inviteMember(organization.id, { email: "no-es-correo", role: "MEMBER" });
+    expect(await prisma.rateLimit.count()).toBe(0);
   });
 });
 

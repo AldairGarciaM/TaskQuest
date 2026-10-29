@@ -1,5 +1,5 @@
 # PROJECT_MAP — TaskQuest
-_Última actualización: 2026-10-28_
+_Última actualización: 2026-10-29_
 
 ## Qué es
 Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logros, rachas). Proyecto de portafolio.
@@ -104,6 +104,8 @@ src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) +
 src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchema, invitationTokenSchema, idSchema
 src/lib/notifications/server.ts  notifyReview(tx, …) (crea y conserva las 50 más recientes), getNotificationFeed(userId) (20 + no leídas), NotificationDTO
 src/lib/notifications/messages.ts notificationText (título/descripción en español), timeAgo (puro)
+src/lib/rate-limit.ts       hit(key, regla) (ventana fija, un upsert atómico), isLimited, clearHits, retryAfterLabel, clientIp(headers); reglas LOGIN_ACCOUNT/LOGIN_IP/REGISTER_IP/INVITE_USER
+src/lib/rate-limit-messages.ts LOGIN_RATE_LIMITED (importable en cliente)
 src/lib/mail.ts             nodemailer; sin SMTP_HOST solo hace console.info del enlace
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
 src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
@@ -160,13 +162,13 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
 |---|---|---|
-| `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
+| `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, límite 5/hora por IP (antes de revisar ocupados), revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
 | `createOrganization(input)` | `src/app/actions/organizations.ts` | Crea org + membresía OWNER; slug con sufijo aleatorio (reintenta en P2002); máx. 10 como dueño |
-| `inviteMember(orgId, {email, role})` | idem | OWNER invita ADMIN/MEMBER, ADMIN solo MEMBER. Rechaza si ya es miembro. Reemplaza la pendiente del mismo correo. Devuelve `{ url, emailed }` |
+| `inviteMember(orgId, {email, role})` | idem | OWNER invita ADMIN/MEMBER, ADMIN solo MEMBER. Rechaza si ya es miembro. Reemplaza la pendiente del mismo correo. Límite 20/hora por quien invita (solo cuenta las que pasan validación y permisos). Devuelve `{ url, emailed }` |
 | `revokeInvitation(id)` | idem | Borra la invitación pendiente (puede revocar quien podría haberla enviado) |
 | `changeMemberRole(orgId, userId, role)` | idem | Solo OWNER; entre ADMIN y MEMBER |
 | `removeMember(orgId, userId)` | idem | OWNER quita ADMIN/MEMBER; ADMIN quita MEMBER; nadie quita al dueño ni a sí mismo |
@@ -183,13 +185,13 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `fetchNotifications()` / `markNotificationsRead()` | `src/app/actions/notifications.ts` | Feed del usuario de la sesión / marca todas como leídas (solo las suyas) |
 | `acceptInvitation(token)` | `src/app/actions/invitations.ts` | Requiere sesión; el correo de la BD debe ser el invitado. Marca usada con update condicional (un solo uso aunque haya peticiones en paralelo) |
 | `acceptInvitationWithSignup(token, profile)` | idem | Sin sesión: crea cuenta con el correo invitado + membresía en una transacción; el cliente hace signIn después |
-| NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName |
+| NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName. Límite: 30 intentos/15 min por IP y 5 fallos/15 min por cuenta (clave = id del usuario o el identificador si no existe; un acierto limpia). Bloqueado → lanza `RateLimited` y el formulario muestra "Demasiados intentos" |
 
 Toda Server Action / página protegida debe llamar `requireUser()`; el proxy solo es una comprobación optimista. Todas las consultas de Task filtran por `userId` del usuario de la sesión. Las acciones devuelven `{ ok: true, ... } | { ok: false, error?, fieldErrors? }`.
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
@@ -201,6 +203,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
 | OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
 | Notification | id, type (NotificationType), taskTitle, xp, level?, note?, actorName?, readAt?, createdAt, userId, organizationId | Copia los datos de la tarea (sobrevive a editarla o borrarla); cascade con User y Organization; índice (userId, createdAt); máx. 50 por usuario |
+| RateLimit | key (PK, p. ej. "login:account:<userId>"), count, resetAt (timestamptz) | Contadores de ventana fija; las vencidas se borran al azar (2 % de los hits). Las pruebas la truncan |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
 Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
@@ -210,6 +213,7 @@ Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–1
 Misiones diarias (3 de 4 por día): Ritmo constante (3 misiones, +30) · Reto mayor (1 Difícil/Épica, +40) · Puntualidad (2 a tiempo, +30) · Versatilidad (2 dificultades, +25).
 Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, daily-sweep. Sin XP; nunca se retiran.
 `dueDate` es fecha de calendario guardada a las 00:00 UTC (columna `timestamp` sin zona; se formatea con timeZone UTC).
+- 2026-10-29: Rate limiting en PostgreSQL (tabla RateLimit) y no en memoria: sobrevive reinicios y funciona con varias instancias sin Redis. Ventana fija con un solo `INSERT … ON CONFLICT` (sin carreras). El bloqueo por cuenta aplica también a cuentas inexistentes (no revela cuáles existen) y comparte clave entre correo y usuario. Sin IP en las cabeceras no se aplica el límite por IP (para no meter a todos en el mismo cubo).
 
 ## Variables de entorno
 Plantilla en `.env.example` (copiar a `.env`):
@@ -274,7 +278,7 @@ En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
 - [x] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer; sin SMTP → consola + copiar enlace), página para aceptar invitación.
 - [ ] Transferir la propiedad de una organización.
-- [ ] Límite de invitaciones por hora (hoy solo hay tope de 10 organizaciones por dueño).
+- [x] Límite de invitaciones: 20 por hora por persona (todas sus organizaciones).
 - [x] Tablero de la organización: asignar o dejar libre, tomar/soltar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
 - [ ] Ranking semanal/mensual (hoy es histórico).
 - [x] Avisar al miembro cuando su tarea se aprueba o se devuelve (campana + toast).
@@ -291,7 +295,8 @@ Prioridad 1 — entorno
 
 Prioridad 2 — funcionalidad
 - [x] Auth (NextAuth v4): login, registro, logout, proxy y `requireUser()`.
-- [ ] Rate limiting en login/registro (ahora no hay límite de intentos).
+- [x] Límite de intentos: login 5 fallos/15 min por cuenta y 30 intentos/15 min por IP; registro 5 cuentas/hora por IP.
+- [ ] Límite por IP depende de `x-real-ip`/`x-forwarded-for`: en producción confiar solo en los que pone el proxy (falsificables si no).
 - [ ] Recuperar contraseña (requiere envío de correo).
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
@@ -319,6 +324,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-29: Rama `feat/rate-limit` (sobre `main`): tabla RateLimit, límites de login, registro e invitaciones. 220 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/history` (sobre `feat/stats`): página /historial con filtros y paginación. 205 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/stats` (sobre `main`): página /estadisticas con indicadores y gráficas. 201 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/dashboard-upcoming` (sobre `feat/calendar-team`): sección "Próximas fechas" en el dashboard y `?dia=` en el calendario. 190 pruebas pasan, build OK.

@@ -20,6 +20,13 @@ export function signOut() {
   currentUser.value = null;
 }
 
+/** Headers that `next/headers` returns in Server Actions (see ./setup). */
+export const requestHeaders: { value: Record<string, string> } = { value: {} };
+
+export function setClientIp(ip: string | null) {
+  requestHeaders.value = ip ? { "x-forwarded-for": ip } : {};
+}
+
 let counter = 0;
 
 /** Creates a user directly in the database and returns its session shape. */
