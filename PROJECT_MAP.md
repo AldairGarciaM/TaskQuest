@@ -338,7 +338,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
-- 2026-10-29: Rama `feat/auth-taglines` (sobre `feat/password-reset`): la frase del panel de login/registro rota entre 6 mensajes con efecto de máquina de escribir. Build OK.
+- 2026-10-29: Rama `feat/auth-taglines` (sobre `feat/password-reset`): la frase del panel de login/registro rota entre 6 mensajes con efecto de máquina de escribir. Build OK. `feat/rate-limit`, `feat/password-reset` y `feat/auth-taglines` fusionadas a `main` (fast-forward) con permiso del usuario.
 - 2026-10-29: Rama `feat/password-reset` (sobre `feat/rate-limit`): recuperar contraseña por correo, sessionVersion para revocar sesiones, avisos en el login. 232 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/rate-limit` (sobre `main`): tabla RateLimit, límites de login, registro e invitaciones. 220 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/history` (sobre `feat/stats`): página /historial con filtros y paginación. 205 pruebas pasan, build OK.
