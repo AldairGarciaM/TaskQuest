@@ -35,7 +35,8 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
 src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser() y getNotificationFeed()
-src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines), "Misiones personales" (TaskList) y "Tareas de organizaciones" (OrgTasksSection)
+src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines) y un resumen de "Misiones personales" (TaskList preview=5, enlace "Ver N misiones más" a /misiones)
+src/app/(dashboard)/misiones/page.tsx  /misiones: lista completa de misiones personales (TaskList con búsqueda y filtro por dificultad) + "Tareas de organizaciones" (OrgTasksSection)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM&dia=YYYY-MM-DD (dia solo abre su mes y lo selecciona): cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
@@ -82,7 +83,7 @@ src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, t
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
 src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
-src/components/task/        TaskList (filtros, optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
+src/components/task/        TaskList (filtros Pendientes/Completadas; sin `preview`: búsqueda sin acentos y filtro por dificultad; con `preview`: solo N + enlace a /misiones; optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
                             TaskFormSheet (crear/editar en Sheet; prop defaultDueDate), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
 src/components/form/        FormField (input con label/error accesible; usado en auth y misiones)
 src/components/ui/sonner.tsx  <Toaster /> oscuro (montado en el layout raíz)
@@ -103,7 +104,7 @@ src/lib/stats.ts            STAT_RANGES, parseRangeParam, summarize(eventos, ran
 src/lib/data/stats.ts       getStats(userId, rango, hoy): eventos de XP (misiones, tareas de equipo que completé, bonos diarios) del doble del rango + rachas
 src/lib/data/history.ts     getHistory(userId, {filter, before, limit=30}): misiones completadas, tareas de equipo que completé (aprobada por …), bonos diarios y logros, más reciente primero; cursor por instante sin partir empates; parseHistoryFilter, parseCursor
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
-src/lib/data/dashboard.ts   getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
+src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
 src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100)
 src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId), findInvitationByToken
@@ -153,6 +154,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | Ruta | Archivo | Estado |
 |---|---|---|
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
+| `/misiones` | `src/app/(dashboard)/misiones/page.tsx` | Protegida; misiones personales + de equipo |
 | `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; `?mes=YYYY-MM` |
 | `/estadisticas` | `src/app/(dashboard)/estadisticas/page.tsx` | Protegida; `?rango=7|30|90` (30 por defecto) |
 | `/historial` | `src/app/(dashboard)/historial/page.tsx` | Protegida; `?filtro=` y `?antes=` |
@@ -232,6 +234,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Rate limiting en PostgreSQL (tabla RateLimit) y no en memoria: sobrevive reinicios y funciona con varias instancias sin Redis. Ventana fija con un solo `INSERT … ON CONFLICT` (sin carreras). El bloqueo por cuenta aplica también a cuentas inexistentes (no revela cuáles existen) y comparte clave entre correo y usuario. Sin IP en las cabeceras no se aplica el límite por IP (para no meter a todos en el mismo cubo).
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
+- 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
 - 2026-10-29: Cambiar contraseña revoca también la sesión actual (sessionVersion es una sola por usuario); el cliente vuelve a iniciar sesión al instante con la nueva para no sacar a la persona. Desde /configuracion no se enlaza a /auth/recuperar porque el proxy redirige /auth/* a "/" con sesión.
 
 ## Variables de entorno
@@ -345,6 +348,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-29: Rama `feat/missions-page` (sobre `feat/mobile-layout`): página /misiones, dashboard con resumen de 5 misiones, búsqueda y filtro por dificultad.
 - 2026-10-29: Rama `feat/mobile-layout` (sobre `feat/change-password`): navegación móvil con Sheet, navbar y márgenes adaptados, ajustes de tarjetas y filtros. Build OK (sin revisión visual en navegador).
 - 2026-10-29: Rama `feat/change-password` (sobre `main`): página /configuracion, cambiar contraseña, engrane del navbar enlazado. 238 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/auth-taglines` (sobre `feat/password-reset`): la frase del panel de login/registro rota entre 6 mensajes con efecto de máquina de escribir. Build OK. `feat/rate-limit`, `feat/password-reset` y `feat/auth-taglines` fusionadas a `main` (fast-forward) con permiso del usuario.

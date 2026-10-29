@@ -17,26 +17,37 @@ export interface TaskDTO {
   completedAt: string | null;
 }
 
+/** The user's personal missions, soonest due first; undated ones last, newest first. */
+export async function getPersonalTasks(userId: string): Promise<TaskDTO[]> {
+  const tasks = await prisma.task.findMany({
+    where: { userId },
+    orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      difficulty: true,
+      xpReward: true,
+      status: true,
+      dueDate: true,
+      completedAt: true,
+    },
+  });
+
+  return tasks.map((task) => ({
+    ...task,
+    dueDate: task.dueDate ? dueDateToInput(task.dueDate) : null,
+    completedAt: task.completedAt?.toISOString() ?? null,
+  }));
+}
+
 export async function getDashboardData(userId: string) {
   const [user, tasks, completedDates, dailyMissions, achievementsCount] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { xp: true },
     }),
-    prisma.task.findMany({
-      where: { userId },
-      orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        difficulty: true,
-        xpReward: true,
-        status: true,
-        dueDate: true,
-        completedAt: true,
-      },
-    }),
+    getPersonalTasks(userId),
     prisma.task.findMany({
       where: { userId, status: "COMPLETED", completedAt: { not: null } },
       select: { completedAt: true },
@@ -45,15 +56,9 @@ export async function getDashboardData(userId: string) {
     prisma.userAchievement.count({ where: { userId } }),
   ]);
 
-  const taskDtos: TaskDTO[] = tasks.map((task) => ({
-    ...task,
-    dueDate: task.dueDate ? dueDateToInput(task.dueDate) : null,
-    completedAt: task.completedAt?.toISOString() ?? null,
-  }));
-
   return {
     xp: user.xp,
-    tasks: taskDtos,
+    tasks,
     completedCount: completedDates.length,
     pendingCount: tasks.length - completedDates.length,
     streak: currentStreak(completedDates.map((t) => t.completedAt!)),

@@ -32,7 +32,7 @@ export default function MobileNav() {
           </SheetClose>
         </div>
 
-        {/* Close on every tap: "/#missions-heading" stays on the same path, so a route change isn't enough. */}
+        {/* Close on every tap, including the link to the page already open. */}
         <SidebarNav onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>

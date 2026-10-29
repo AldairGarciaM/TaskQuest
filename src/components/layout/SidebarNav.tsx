@@ -23,7 +23,7 @@ const menuItems = [
   {
     label: "Misiones",
     icon: CheckSquare,
-    href: "/#missions-heading",
+    href: "/misiones",
   },
   {
     label: "Logros",

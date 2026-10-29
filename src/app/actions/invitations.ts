@@ -64,6 +64,7 @@ export async function acceptInvitation(token: unknown): Promise<{ ok: true; slug
   }
 
   revalidatePath("/organizaciones", "layout");
+  revalidatePath("/misiones");
   revalidatePath("/");
   return { ok: true, slug: invitation.organizationSlug };
 }

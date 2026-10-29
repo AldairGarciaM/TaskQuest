@@ -21,9 +21,10 @@ const FORBIDDEN: Failure = { ok: false, error: "No tienes permiso para hacer eso
 const GENERIC_ERROR: Failure = { ok: false, error: "Algo salió mal. Intenta de nuevo." };
 const NOT_A_MEMBER: OrgTaskFieldErrors = { assigneeId: ["Esa persona no es miembro de la organización"] };
 
-/** The board, the dashboard (which lists my tasks and the open ones) and my calendar. */
+/** The board, my missions (which list my team tasks and the open ones), the dashboard and my calendar. */
 function revalidateBoard() {
   revalidatePath("/organizaciones", "layout");
+  revalidatePath("/misiones");
   revalidatePath("/");
   revalidatePath("/calendario");
 }

@@ -41,7 +41,8 @@ const GENERIC_ERROR = { ok: false, error: "Algo salió mal. Intenta de nuevo." }
 
 function revalidateOrganizations() {
   revalidatePath("/organizaciones", "layout");
-  // The dashboard lists tasks of my organizations.
+  // My missions list tasks of my organizations; the dashboard counts upcoming deadlines.
+  revalidatePath("/misiones");
   revalidatePath("/");
 }
 

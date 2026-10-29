@@ -122,7 +122,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
             </span>
           )}
           {data.undatedPending > 0 && (
-            <Link href="/#missions-heading" className="underline-offset-4 hover:text-slate-200 hover:underline">
+            <Link href="/misiones" className="underline-offset-4 hover:text-slate-200 hover:underline">
               <span className="font-semibold tabular-nums">{data.undatedPending}</span> pendiente
               {data.undatedPending === 1 ? "" : "s"} sin fecha
             </Link>
