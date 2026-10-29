@@ -1,6 +1,8 @@
 import { DifficultyStyles } from "@/app/constants/taskDifficulty";
 import type { Difficulty } from "@/generated/prisma/enums";
 
+import RotatingTagline from "./RotatingTagline";
+
 const sampleQuests: { title: string; difficulty: Difficulty; xp: number; done: boolean }[] = [
   { title: "Responder correos pendientes", difficulty: "EASY", xp: 10, done: true },
   { title: "Terminar el reporte mensual", difficulty: "HARD", xp: 50, done: true },
@@ -20,9 +22,7 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
         <p className="relative text-2xl font-bold">⚔️ TaskQuest</p>
 
         <div className="relative max-w-md space-y-10">
-          <h2 className="text-4xl leading-tight font-bold text-balance">
-            Tu lista de pendientes, <span className="text-yellow-300">convertida en aventura.</span>
-          </h2>
+          <RotatingTagline />
 
           <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
             <div className="flex items-baseline justify-between">

@@ -63,7 +63,7 @@ src/app/auth/register/page.tsx  /auth/register
 src/app/auth/actions.ts     Server Actions registerUser (zod + bcrypt cost 12, P2002 → email duplicado), requestPasswordReset, resetPassword
 src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
 src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
-src/components/auth/        ForgotPasswordForm, ResetPasswordForm, AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
+src/components/auth/        RotatingTagline (frase del panel de marca rota cada 4,5 s con Motion; fija con reduced motion; sr-only estable), ForgotPasswordForm, ResetPasswordForm, AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (props userName, userId, notifications), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
@@ -338,6 +338,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-29: Rama `feat/auth-taglines` (sobre `feat/password-reset`): la frase del panel de login/registro rota entre 6 mensajes. Build OK.
 - 2026-10-29: Rama `feat/password-reset` (sobre `feat/rate-limit`): recuperar contraseña por correo, sessionVersion para revocar sesiones, avisos en el login. 232 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/rate-limit` (sobre `main`): tabla RateLimit, límites de login, registro e invitaciones. 220 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/history` (sobre `feat/stats`): página /historial con filtros y paginación. 205 pruebas pasan, build OK.
