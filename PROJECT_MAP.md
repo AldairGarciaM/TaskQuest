@@ -55,12 +55,15 @@ src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitati
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
 src/app/auth/layout.tsx     layout de login/registro → usa AuthShell
-src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl, muestra ?registered=1)
+src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl; avisos ?registered=1, ?restablecida=1, ?expirada=1)
+src/app/auth/recuperar/page.tsx /auth/recuperar: pedir enlace (ForgotPasswordForm; misma respuesta exista o no la cuenta)
+src/app/auth/restablecer/[token]/page.tsx  nueva contraseña (valida el token en servidor; inválido → "Este enlace ya no funciona"; noindex + no-referrer)
+src/app/api/session/expired/route.ts  borra la cookie de NextAuth y lleva a /auth/login?expirada=1 (requireUser redirige aquí si la sesión fue revocada)
 src/app/auth/register/page.tsx  /auth/register
-src/app/auth/actions.ts     Server Action registerUser (zod + bcrypt cost 12, P2002 → email duplicado)
+src/app/auth/actions.ts     Server Actions registerUser (zod + bcrypt cost 12, P2002 → email duplicado), requestPasswordReset, resetPassword
 src/app/api/auth/[...nextauth]/route.ts  handler NextAuth
 src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/login?callbackUrl; con token en /auth/* → /
-src/components/auth/        AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
+src/components/auth/        ForgotPasswordForm, ResetPasswordForm, AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (props userName, userId, notifications), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppSidebar (client: Link + aria-current; Calendario/Estadísticas/Historial "Pronto"), AppNavbar, SignOutButton
@@ -83,7 +86,9 @@ src/components/ui/sonner.tsx  <Toaster /> oscuro (montado en el layout raíz)
 src/lib/utils.ts            cn()
 src/lib/prisma.ts           PrismaClient singleton con adapter pg
 src/lib/auth.ts             authOptions de NextAuth (Credentials, JWT, session.user.id)
-src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /auth/login
+src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /auth/login; si sessionVersion del JWT ≠ BD (o la cuenta ya no existe) → /api/session/expired
+src/lib/session-version.ts  isSessionCurrent(userId, version), EXPIRED_SESSION_PATH
+src/lib/password-reset.ts   token de restablecimiento (32 bytes, solo hash SHA-256), vence en 60 min, passwordResetUrl, findValidResetToken
 src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
 src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profileSchema, registerSchema, usernameSchema
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
@@ -106,7 +111,7 @@ src/lib/notifications/server.ts  notifyReview(tx, …) (crea y conserva las 50 m
 src/lib/notifications/messages.ts notificationText (título/descripción en español), timeAgo (puro)
 src/lib/rate-limit.ts       hit(key, regla) (ventana fija, un upsert atómico), isLimited, clearHits, retryAfterLabel, clientIp(headers); reglas LOGIN_ACCOUNT/LOGIN_IP/REGISTER_IP/INVITE_USER
 src/lib/rate-limit-messages.ts LOGIN_RATE_LIMITED (importable en cliente)
-src/lib/mail.ts             nodemailer; sin SMTP_HOST solo hace console.info del enlace
+src/lib/mail.ts             nodemailer: sendInvitationEmail, sendPasswordResetEmail; sin SMTP_HOST solo hace console.info del enlace
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
 src/lib/gamification/achievements.ts ACHIEVEMENTS (catálogo en código), newlyUnlocked (puro)
 src/lib/gamification/server.ts       ensureDailyMissions, getDailyMissions, syncDailyMissions, unlockAchievements, addUserXp (Prisma)
@@ -155,6 +160,9 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/invitaciones/[token]` | `src/app/invitaciones/[token]/page.tsx` | Pública (el proxy la deja pasar sin sesión) |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
+| `/auth/recuperar` | `src/app/auth/recuperar/page.tsx` | Pública (sin sesión) |
+| `/auth/restablecer/[token]` | `src/app/auth/restablecer/[token]/page.tsx` | Pública (sin sesión) |
+| `/api/session/expired` | `src/app/api/session/expired/route.ts` | GET: limpia cookie de sesión revocada |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
 Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadísticas, Historial (ya no queda nada en "Pronto"; AppSidebar conserva el estilo para futuros). Las subrutas resaltan su sección.
@@ -163,6 +171,8 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | Nombre | Archivo | Qué hace |
 |---|---|---|
 | `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, límite 5/hora por IP (antes de revisar ocupados), revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
+| `requestPasswordReset({email})` | `src/app/auth/actions.ts` | Siempre `{ok:true}` exista o no la cuenta. Límite 3/hora por correo y 10/hora por IP. Borra los enlaces anteriores y crea uno (60 min); lo envía por correo (sin SMTP → consola, nunca en la UI) |
+| `resetPassword(token, {password})` | idem | Transacción: valida token vigente, lo marca usado con update condicional (un solo uso en paralelo), cambia el hash, incrementa `sessionVersion` (cierra todas las sesiones) y borra los demás enlaces; limpia el bloqueo de login de la cuenta. Inválido/vencido → `{expired: true}` |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
@@ -191,10 +201,11 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`, `20261029163230_password_reset`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
-| User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, xp (0), level (1) | Login con correo o usuario |
+| User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, sessionVersion (0), xp (0), level (1) | Login con correo o usuario. sessionVersion va en el JWT; cambiarla revoca sesiones |
+| PasswordResetToken | id, tokenHash (unique), expiresAt, usedAt?, createdAt, userId | Cascade con User; uno vigente por usuario |
 | Task | id, title, description?, difficulty, xpReward, status, dueDate?, completedAt?, userId | FK a User con cascade; índice (userId, status) |
 | DailyMission | id, day ("YYYY-MM-DD" en APP_TIME_ZONE), type, target, xpReward, rewardedAt?, userId | Único (userId, day, type). El progreso NO se guarda: se calcula de las tareas completadas ese día |
 | UserAchievement | id, key, unlockedAt, userId | Único (userId, key). Definiciones en código |
@@ -214,6 +225,8 @@ Misiones diarias (3 de 4 por día): Ritmo constante (3 misiones, +30) · Reto ma
 Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, daily-sweep. Sin XP; nunca se retiran.
 `dueDate` es fecha de calendario guardada a las 00:00 UTC (columna `timestamp` sin zona; se formatea con timeZone UTC).
 - 2026-10-29: Rate limiting en PostgreSQL (tabla RateLimit) y no en memoria: sobrevive reinicios y funciona con varias instancias sin Redis. Ventana fija con un solo `INSERT … ON CONFLICT` (sin carreras). El bloqueo por cuenta aplica también a cuentas inexistentes (no revela cuáles existen) y comparte clave entre correo y usuario. Sin IP en las cabeceras no se aplica el límite por IP (para no meter a todos en el mismo cubo).
+- 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
+- 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 
 ## Variables de entorno
 Plantilla en `.env.example` (copiar a `.env`):
@@ -297,7 +310,8 @@ Prioridad 2 — funcionalidad
 - [x] Auth (NextAuth v4): login, registro, logout, proxy y `requireUser()`.
 - [x] Límite de intentos: login 5 fallos/15 min por cuenta y 30 intentos/15 min por IP; registro 5 cuentas/hora por IP.
 - [ ] Límite por IP depende de `x-real-ip`/`x-forwarded-for`: en producción confiar solo en los que pone el proxy (falsificables si no).
-- [ ] Recuperar contraseña (requiere envío de correo).
+- [x] Recuperar contraseña por correo; al cambiarla se cierran todas las sesiones.
+- [ ] Cambiar contraseña desde el perfil estando logueado (reutilizar `sessionVersion`).
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
@@ -324,6 +338,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-29: Rama `feat/password-reset` (sobre `feat/rate-limit`): recuperar contraseña por correo, sessionVersion para revocar sesiones, avisos en el login. 232 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/rate-limit` (sobre `main`): tabla RateLimit, límites de login, registro e invitaciones. 220 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/history` (sobre `feat/stats`): página /historial con filtros y paginación. 205 pruebas pasan, build OK.
 - 2026-10-28: Rama `feat/stats` (sobre `main`): página /estadisticas con indicadores y gráficas. 201 pruebas pasan, build OK.

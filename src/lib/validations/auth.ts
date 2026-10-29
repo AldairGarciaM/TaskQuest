@@ -53,3 +53,13 @@ export const registerSchema = profileSchema.extend({ email: emailSchema });
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+
+export const resetPasswordSchema = z.object({ password: passwordSchema });
+
+/** Same shape as invitation tokens: 32 random bytes in base64url. */
+export const resetTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

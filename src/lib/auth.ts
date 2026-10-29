@@ -53,6 +53,7 @@ export const authOptions: NextAuthOptions = {
             username: true,
             email: true,
             passwordHash: true,
+            sessionVersion: true,
           },
         });
 
@@ -77,6 +78,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           username: user.username,
           firstName: user.firstName,
+          sessionVersion: user.sessionVersion,
         };
       },
     }),
@@ -87,6 +89,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.username = user.username;
         token.firstName = user.firstName;
+        token.sessionVersion = user.sessionVersion;
       }
       return token;
     },
@@ -95,6 +98,8 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.sub;
         session.user.username = token.username ?? "";
         session.user.firstName = token.firstName ?? session.user.name?.split(" ")[0] ?? "";
+        // Tokens issued before sessionVersion existed match the column default.
+        session.user.sessionVersion = token.sessionVersion ?? 0;
       }
       return session;
     },

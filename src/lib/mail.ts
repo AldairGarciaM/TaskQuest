@@ -53,3 +53,27 @@ export async function sendInvitationEmail({ to, organizationName, inviterName, u
     return false;
   }
 }
+
+/** Sends the password reset link, or logs it when SMTP isn't configured. Returns whether it was emailed. */
+export async function sendPasswordResetEmail({ to, url, ttlMinutes }: { to: string; url: string; ttlMinutes: number }): Promise<boolean> {
+  if (!isMailConfigured()) {
+    console.info(`[mail] SMTP not configured. Password reset for ${to}: ${url}`);
+    return false;
+  }
+
+  const subject = "Restablece tu contraseña de TaskQuest";
+  const ignore = "Si no lo pediste, ignora este correo: tu contraseña no cambiará.";
+  try {
+    await getTransporter().sendMail({
+      from: process.env.MAIL_FROM ?? "TaskQuest <no-reply@taskquest.local>",
+      to,
+      subject,
+      text: `Elige una contraseña nueva aquí (vence en ${ttlMinutes} minutos):\n${url}\n\n${ignore}\n`,
+      html: `<p><a href="${escapeHtml(url)}">Elegir una contraseña nueva</a></p><p>El enlace vence en ${ttlMinutes} minutos y solo funciona una vez.</p><p>${ignore}</p>`,
+    });
+    return true;
+  } catch (error) {
+    console.error("sendPasswordResetEmail failed", error);
+    return false;
+  }
+}

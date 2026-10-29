@@ -10,9 +10,17 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; registered?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; registered?: string; restablecida?: string; expirada?: string }>;
 }) {
-  const { callbackUrl, registered } = await searchParams;
+  const { callbackUrl, registered, restablecida, expirada } = await searchParams;
+  const notice =
+    restablecida === "1"
+      ? "Contraseña actualizada. Inicia sesión con la nueva."
+      : expirada === "1"
+        ? "Tu sesión se cerró porque la contraseña cambió. Inicia sesión de nuevo."
+        : registered === "1"
+          ? "Cuenta creada. Inicia sesión para empezar."
+          : undefined;
 
-  return <LoginForm callbackUrl={safeCallbackUrl(callbackUrl)} registered={registered === "1"} />;
+  return <LoginForm callbackUrl={safeCallbackUrl(callbackUrl)} notice={notice} />;
 }

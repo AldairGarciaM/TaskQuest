@@ -14,6 +14,10 @@ export const LOGIN_ACCOUNT_LIMIT: RateLimitRule = { limit: 5, windowMs: 15 * MIN
 export const LOGIN_IP_LIMIT: RateLimitRule = { limit: 30, windowMs: 15 * MINUTE };
 /** New accounts per IP. */
 export const REGISTER_IP_LIMIT: RateLimitRule = { limit: 5, windowMs: 60 * MINUTE };
+/** Reset emails per address, whether or not it has an account. */
+export const PASSWORD_RESET_EMAIL_LIMIT: RateLimitRule = { limit: 3, windowMs: 60 * MINUTE };
+/** Reset requests per IP, across addresses. */
+export const PASSWORD_RESET_IP_LIMIT: RateLimitRule = { limit: 10, windowMs: 60 * MINUTE };
 /** Invitations each person can send, across all their organizations. */
 export const INVITE_USER_LIMIT: RateLimitRule = { limit: 20, windowMs: 60 * MINUTE };
 

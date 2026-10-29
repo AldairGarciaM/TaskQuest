@@ -18,10 +18,11 @@ type FieldErrors = Partial<Record<keyof LoginInput, string[]>>;
 
 interface LoginFormProps {
   callbackUrl: string;
-  registered?: boolean;
+  /** Confirmation from the previous step (account created, password changed…). */
+  notice?: string;
 }
 
-export default function LoginForm({ callbackUrl, registered = false }: LoginFormProps) {
+export default function LoginForm({ callbackUrl, notice }: LoginFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -63,12 +64,12 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
         <p className="text-sm text-slate-400">Inicia sesión para retomar tus misiones.</p>
       </header>
 
-      {registered && !formError && (
+      {notice && !formError && (
         <p
           role="status"
           className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"
         >
-          Cuenta creada. Inicia sesión para empezar.
+          {notice}
         </p>
       )}
 
@@ -86,13 +87,23 @@ export default function LoginForm({ callbackUrl, registered = false }: LoginForm
           error={fieldErrors.identifier?.[0]}
         />
 
-        <PasswordField
-          label="Contraseña"
-          name="password"
-          autoComplete="current-password"
-          required
-          error={fieldErrors.password?.[0]}
-        />
+        <div className="space-y-2">
+          <PasswordField
+            label="Contraseña"
+            name="password"
+            autoComplete="current-password"
+            required
+            error={fieldErrors.password?.[0]}
+          />
+          <p className="text-right text-sm">
+            <Link
+              href="/auth/recuperar"
+              className="font-medium text-violet-400 underline-offset-4 hover:text-violet-300 hover:underline"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </p>
+        </div>
 
         <SubmitButton pending={pending} pendingLabel="Entrando…">
           Iniciar sesión
