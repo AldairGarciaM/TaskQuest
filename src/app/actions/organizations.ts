@@ -10,25 +10,37 @@ import {
   canDeleteOrganization,
   canInvite,
   canLeave,
+  canManageInvitations,
   canRemoveMember,
   MAX_OWNED_ORGANIZATIONS,
 } from "@/lib/organizations/permissions";
+import { formatJoinCode } from "@/lib/organizations/join-code";
 import {
   createInvitationToken,
+  createJoinCode,
   hashInvitationToken,
   invitationExpiry,
   invitationUrl,
   organizationSlug,
 } from "@/lib/organizations/tokens";
 import { prisma } from "@/lib/prisma";
-import { hit, INVITE_USER_LIMIT, retryAfterLabel } from "@/lib/rate-limit";
+import {
+  clearHits,
+  hit,
+  INVITE_USER_LIMIT,
+  isLimited,
+  JOIN_CODE_USER_LIMIT,
+  retryAfterLabel,
+} from "@/lib/rate-limit";
 import { requireUser } from "@/lib/session";
 import {
   assignableRoleSchema,
   createOrganizationSchema,
   idSchema,
   inviteMemberSchema,
+  joinOrganizationSchema,
   type InviteFieldErrors,
+  type JoinFieldErrors,
   type OrganizationFieldErrors,
 } from "@/lib/validations/organization";
 
@@ -244,4 +256,91 @@ export async function deleteOrganization(organizationId: unknown): Promise<Resul
   await prisma.organization.delete({ where: { id: orgId.data } });
   revalidateOrganizations();
   return { ok: true };
+}
+
+/** Turns joining by code on with a fresh code, or replaces the current one (the old one stops working). */
+export async function regenerateJoinCode(organizationId: unknown): Promise<Result<{ code: string }>> {
+  const user = await requireUser();
+  const id = idSchema.safeParse(organizationId);
+  if (!id.success) return NOT_FOUND;
+  const role = await roleIn(id.data, user.id);
+  if (!role) return NOT_FOUND;
+  if (!canManageInvitations(role)) return FORBIDDEN;
+
+  // A collision is astronomically unlikely, but the column is unique: retry instead of failing.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = createJoinCode();
+    try {
+      await prisma.organization.update({ where: { id: id.data }, data: { joinCode: code } });
+      revalidatePath("/organizaciones", "layout");
+      return { ok: true, code: formatJoinCode(code) };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+      console.error("regenerateJoinCode failed", error);
+      return GENERIC_ERROR;
+    }
+  }
+  return GENERIC_ERROR;
+}
+
+/** Turns joining by code off. Members who already joined stay. */
+export async function disableJoinCode(organizationId: unknown): Promise<Result> {
+  const user = await requireUser();
+  const id = idSchema.safeParse(organizationId);
+  if (!id.success) return NOT_FOUND;
+  const role = await roleIn(id.data, user.id);
+  if (!role) return NOT_FOUND;
+  if (!canManageInvitations(role)) return FORBIDDEN;
+
+  await prisma.organization.update({ where: { id: id.data }, data: { joinCode: null } });
+  revalidatePath("/organizaciones", "layout");
+  return { ok: true };
+}
+
+const WRONG_CODE: Failure<JoinFieldErrors> = {
+  ok: false,
+  fieldErrors: { code: ["No encontramos una organización con ese código"] },
+};
+
+/** Joins the organization with that code as a member. Already in it: just takes you there. */
+export async function joinOrganizationByCode(
+  input: unknown,
+): Promise<Result<{ slug: string; name: string; alreadyMember: boolean }, JoinFieldErrors>> {
+  const user = await requireUser();
+  const parsed = joinOrganizationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, fieldErrors: z.flattenError(parsed.error).fieldErrors };
+
+  const limitKey = `join-code:user:${user.id}`;
+  const tooMany = (resetAt?: Date) => ({
+    ok: false as const,
+    error: `Demasiados códigos incorrectos. Intenta de nuevo en ${resetAt ? retryAfterLabel(resetAt) : "unos minutos"}.`,
+  });
+  if (await isLimited(limitKey, JOIN_CODE_USER_LIMIT)) return tooMany();
+
+  const organization = await prisma.organization.findUnique({
+    where: { joinCode: parsed.data.code },
+    select: { id: true, slug: true, name: true },
+  });
+  if (!organization) {
+    const limit = await hit(limitKey, JOIN_CODE_USER_LIMIT);
+    return limit.allowed ? WRONG_CODE : tooMany(limit.resetAt);
+  }
+  await clearHits(limitKey);
+
+  const joined = { slug: organization.slug, name: organization.name };
+  if (await roleIn(organization.id, user.id)) return { ok: true, ...joined, alreadyMember: true };
+
+  try {
+    await prisma.membership.create({ data: { organizationId: organization.id, userId: user.id, role: "MEMBER" } });
+  } catch (error) {
+    // Joined twice at once (double click): the first request already did it.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { ok: true, ...joined, alreadyMember: true };
+    }
+    console.error("joinOrganizationByCode failed", error);
+    return GENERIC_ERROR;
+  }
+
+  revalidateOrganizations();
+  return { ok: true, ...joined, alreadyMember: false };
 }

@@ -121,6 +121,8 @@ model Organization {
   name      String
   /// URL id: slugified name plus a random suffix.
   slug      String   @unique
+  /// Code anyone can enter to join as a member (8 chars, no separator); null = joining by code is off.
+  joinCode  String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

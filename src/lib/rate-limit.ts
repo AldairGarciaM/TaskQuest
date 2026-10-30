@@ -22,6 +22,8 @@ export const PASSWORD_RESET_IP_LIMIT: RateLimitRule = { limit: 10, windowMs: 60 
 export const PASSWORD_CHANGE_USER_LIMIT: RateLimitRule = { limit: 5, windowMs: 15 * MINUTE };
 /** Invitations each person can send, across all their organizations. */
 export const INVITE_USER_LIMIT: RateLimitRule = { limit: 20, windowMs: 60 * MINUTE };
+/** Wrong join codes per person, so codes can't be guessed. */
+export const JOIN_CODE_USER_LIMIT: RateLimitRule = { limit: 10, windowMs: 15 * MINUTE };
 
 export { LOGIN_RATE_LIMITED } from "@/lib/rate-limit-messages";
 

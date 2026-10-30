@@ -5,14 +5,18 @@ import {
   changeMemberRole,
   createOrganization,
   deleteOrganization,
+  disableJoinCode,
   inviteMember,
+  joinOrganizationByCode,
   leaveOrganization,
+  regenerateJoinCode,
   removeMember,
   revokeInvitation,
 } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
 import { MAX_OWNED_ORGANIZATIONS } from "@/lib/organizations/permissions";
-import { INVITE_USER_LIMIT } from "@/lib/rate-limit";
+import { getOrganizationForMember } from "@/lib/data/organizations";
+import { INVITE_USER_LIMIT, JOIN_CODE_USER_LIMIT } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
 import { createSignedInUser, createUser, signInAs, signOut } from "./helpers";
@@ -357,5 +361,108 @@ describe("member management", () => {
     expect(await prisma.organization.count()).toBe(0);
     expect(await prisma.membership.count()).toBe(0);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).xp).toBe(120);
+  });
+});
+
+describe("join codes", () => {
+  async function withCode() {
+    const owner = await createSignedInUser();
+    const organization = await newOrganization();
+    const result = await regenerateJoinCode(organization.id);
+    if (!result.ok) throw new Error("regenerateJoinCode failed");
+    return { owner, organization, code: result.code };
+  }
+
+  it("starts off, and owners and admins turn it on, replace it and turn it off", async () => {
+    const owner = await createSignedInUser();
+    const organization = await newOrganization();
+    expect(organization.joinCode).toBeNull();
+
+    const first = await regenerateJoinCode(organization.id);
+    expect(first).toMatchObject({ ok: true, code: expect.stringMatching(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/) });
+
+    const admin = await createUser();
+    await addMember(organization.id, admin, "ADMIN");
+    signInAs(admin);
+    const second = await regenerateJoinCode(organization.id);
+    expect(second.ok && first.ok && second.code !== first.code).toBe(true);
+
+    signInAs(owner);
+    expect(await disableJoinCode(organization.id)).toEqual({ ok: true });
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: organization.id } })).joinCode).toBeNull();
+  });
+
+  it("refuses members and outsiders", async () => {
+    const { organization } = await withCode();
+    const member = await createUser();
+    await addMember(organization.id, member, "MEMBER");
+
+    signInAs(member);
+    expect(await regenerateJoinCode(organization.id)).toEqual({ ok: false, error: "No tienes permiso para hacer eso." });
+    expect(await disableJoinCode(organization.id)).toEqual({ ok: false, error: "No tienes permiso para hacer eso." });
+    signInAs(await createUser());
+    expect(await regenerateJoinCode(organization.id)).toEqual({ ok: false, error: "No encontramos esa organización." });
+  });
+
+  it("shows the code only to owners and admins", async () => {
+    const { owner, organization, code } = await withCode();
+    const member = await createUser();
+    await addMember(organization.id, member, "MEMBER");
+
+    expect((await getOrganizationForMember(organization.slug, owner.id))?.joinCode).toBe(code);
+    expect((await getOrganizationForMember(organization.slug, member.id))?.joinCode).toBeNull();
+  });
+
+  it("joins as a member, typed in any case and without the hyphen", async () => {
+    const { organization, code } = await withCode();
+    const joiner = await createSignedInUser();
+
+    const result = await joinOrganizationByCode({ code: code.replace("-", " ").toLowerCase() });
+    expect(result).toEqual({ ok: true, slug: organization.slug, name: organization.name, alreadyMember: false });
+    expect(await roleOf(organization.id, joiner.id)).toBe("MEMBER");
+  });
+
+  it("keeps the role of someone who is already in", async () => {
+    const { owner, organization, code } = await withCode();
+    signInAs(owner);
+
+    expect(await joinOrganizationByCode({ code })).toMatchObject({ ok: true, alreadyMember: true });
+    expect(await roleOf(organization.id, owner.id)).toBe("OWNER");
+  });
+
+  it("stops working once replaced or turned off", async () => {
+    const { owner, organization, code } = await withCode();
+    await regenerateJoinCode(organization.id);
+    const joiner = await createSignedInUser();
+    expect(await joinOrganizationByCode({ code })).toEqual({
+      ok: false,
+      fieldErrors: { code: ["No encontramos una organización con ese código"] },
+    });
+
+    signInAs(owner);
+    const current = await regenerateJoinCode(organization.id);
+    await disableJoinCode(organization.id);
+    signInAs(joiner);
+    expect((await joinOrganizationByCode({ code: current.ok ? current.code : "" })).ok).toBe(false);
+    expect(await roleOf(organization.id, joiner.id)).toBeNull();
+  });
+
+  it("locks after too many wrong codes, even with the right one", async () => {
+    const { code } = await withCode();
+    await createSignedInUser();
+    for (let i = 0; i < JOIN_CODE_USER_LIMIT.limit; i++) {
+      expect(await joinOrganizationByCode({ code: "ZZZZ-ZZZZ" })).toMatchObject({ ok: false, fieldErrors: expect.anything() });
+    }
+    expect(await joinOrganizationByCode({ code })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Demasiados códigos incorrectos/),
+    });
+  });
+
+  it("validates the code and requires a session", async () => {
+    await createSignedInUser();
+    expect(await joinOrganizationByCode({ code: "nope" })).toMatchObject({ ok: false, fieldErrors: { code: [expect.any(String)] } });
+    signOut();
+    await expect(joinOrganizationByCode({ code: "ABCD-2345" })).rejects.toThrow(/NEXT_REDIRECT/);
   });
 });

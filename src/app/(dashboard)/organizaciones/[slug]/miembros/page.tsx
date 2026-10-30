@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import InviteMemberForm from "@/components/organization/InviteMemberForm";
+import JoinCodePanel from "@/components/organization/JoinCodePanel";
 import MemberList from "@/components/organization/MemberList";
 import OrganizationDangerZone from "@/components/organization/OrganizationDangerZone";
 import PendingInvitations from "@/components/organization/PendingInvitations";
@@ -44,6 +45,20 @@ export default async function MembersPage({ params }: PageProps) {
             <p className="text-sm text-slate-400">Solo la cuenta con ese correo podrá aceptar.</p>
           </div>
           <InviteMemberForm organizationId={organization.id} roles={roles} />
+        </section>
+      )}
+
+      {canManageInvitations(organization.myRole) && (
+        <section aria-labelledby="code-heading" className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
+          <div>
+            <h2 id="code-heading" className="font-semibold">
+              Unirse con código
+            </h2>
+            <p className="text-sm text-slate-400">
+              Compártelo con tu equipo: lo escriben en «Organizaciones» y entran como miembros.
+            </p>
+          </div>
+          <JoinCodePanel organizationId={organization.id} code={organization.joinCode} />
         </section>
       )}
 

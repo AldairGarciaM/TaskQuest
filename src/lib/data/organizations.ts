@@ -1,6 +1,7 @@
 import type { OrgRole } from "@/generated/prisma/enums";
 import { canManageInvitations } from "@/lib/organizations/permissions";
 import { hashInvitationToken } from "@/lib/organizations/tokens";
+import { formatJoinCode } from "@/lib/organizations/join-code";
 import { prisma } from "@/lib/prisma";
 
 const ROLE_ORDER: Record<OrgRole, number> = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
@@ -58,6 +59,8 @@ export interface OrganizationDetail {
   members: MemberDTO[];
   /** Pending invitations; empty for roles that can't manage them. */
   invitations: InvitationDTO[];
+  /** "ABCD-2345", or null when joining by code is off or the viewer can't manage invitations. */
+  joinCode: string | null;
 }
 
 /** The organization as seen by one of its members, or null if they aren't one. */
@@ -68,6 +71,7 @@ export async function getOrganizationForMember(slug: string, userId: string): Pr
       id: true,
       name: true,
       slug: true,
+      joinCode: true,
       members: {
         select: {
           role: true,
@@ -114,6 +118,7 @@ export async function getOrganizationForMember(slug: string, userId: string): Pr
       expiresAt: i.expiresAt.toISOString(),
       expired: i.expiresAt.getTime() <= now,
     })),
+    joinCode: canManageInvitations(me.role) && organization.joinCode ? formatJoinCode(organization.joinCode) : null,
   };
 }
 

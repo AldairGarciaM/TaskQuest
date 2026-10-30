@@ -54,7 +54,7 @@ src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar 
 src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
 src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
-src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization
+src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization, regenerateJoinCode, disableJoinCode, joinOrganizationByCode
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, rescheduleTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
@@ -71,7 +71,7 @@ src/components/auth/        RotatingTagline (frase del panel de marca tecleada l
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (props userName, userId, notifications; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
-src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace),
+src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
                             OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking, RejectTaskDialog (nota opcional), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; tablero y dashboard)
@@ -107,13 +107,14 @@ src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStr
 src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
 src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100)
-src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId), findInvitationByToken
+src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
-src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug
-src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchema, invitationTokenSchema, idSchema
+src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug, createJoinCode (8 chars, sin sesgo)
+src/lib/organizations/join-code.ts   JOIN_CODE_ALPHABET (sin 0/O/1/I/L), JOIN_CODE_LENGTH, formatJoinCode ("ABCD-2345"); puro, se puede importar en cliente
+src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchema, invitationTokenSchema, idSchema, joinCodeSchema/joinOrganizationSchema (mayúsculas, quita espacios y guion)
 src/lib/notifications/server.ts  notifyReview(tx, …) (crea y conserva las 50 más recientes), getNotificationFeed(userId) (20 + no leídas), NotificationDTO
 src/lib/notifications/messages.ts notificationText (título/descripción en español), timeAgo (puro)
-src/lib/rate-limit.ts       hit(key, regla) (ventana fija, un upsert atómico), isLimited, clearHits, retryAfterLabel, clientIp(headers); reglas LOGIN_ACCOUNT/LOGIN_IP/REGISTER_IP/INVITE_USER
+src/lib/rate-limit.ts       hit(key, regla) (ventana fija, un upsert atómico), isLimited, clearHits, retryAfterLabel, clientIp(headers); reglas LOGIN_ACCOUNT/LOGIN_IP/REGISTER_IP/INVITE_USER/JOIN_CODE_USER
 src/lib/rate-limit-messages.ts LOGIN_RATE_LIMITED (importable en cliente)
 src/lib/mail.ts             nodemailer: sendInvitationEmail, sendPasswordResetEmail; sin SMTP_HOST solo hace console.info del enlace
 src/lib/gamification/daily.ts        DAILY_CATALOG, pickDailyTypes (determinista por usuario+día), dailyProgress (puro)
@@ -187,6 +188,8 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
 | `createOrganization(input)` | `src/app/actions/organizations.ts` | Crea org + membresía OWNER; slug con sufijo aleatorio (reintenta en P2002); máx. 10 como dueño |
+| `regenerateJoinCode(orgId)` / `disableJoinCode(orgId)` | idem | Dueño/admin. Activa o reemplaza el código (el anterior deja de servir; reintenta en P2002) o lo pone en null. Devuelve `{ code }` formateado |
+| `joinOrganizationByCode({code})` | idem | Requiere sesión. Entra como MEMBER; si ya es miembro no cambia su rol (`alreadyMember`). 10 códigos incorrectos/15 min por usuario, luego bloquea aunque el código sea correcto; un acierto limpia |
 | `inviteMember(orgId, {email, role})` | idem | OWNER invita ADMIN/MEMBER, ADMIN solo MEMBER. Rechaza si ya es miembro. Reemplaza la pendiente del mismo correo. Límite 20/hora por quien invita (solo cuenta las que pasan validación y permisos). Devuelve `{ url, emailed }` |
 | `revokeInvitation(id)` | idem | Borra la invitación pendiente (puede revocar quien podría haberla enviado) |
 | `changeMemberRole(orgId, userId, role)` | idem | Solo OWNER; entre ADMIN y MEMBER |
@@ -211,7 +214,7 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`, `20261029163230_password_reset`, `20261030173649_org_task_rescheduled`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`, `20261029163230_password_reset`, `20261030173649_org_task_rescheduled`, `20261030190000_org_join_code` (escrita a mano: `migrate dev` no corre sin terminal interactiva).
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, sessionVersion (0), xp (0), level (1) | Login con correo o usuario. sessionVersion va en el JWT; cambiarla revoca sesiones |
@@ -220,7 +223,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | DailyMission | id, day ("YYYY-MM-DD" en APP_TIME_ZONE), type, target, xpReward, rewardedAt?, userId | Único (userId, day, type). El progreso NO se guarda: se calcula de las tareas completadas ese día |
 | UserAchievement | id, key, unlockedAt, userId | Único (userId, key). Definiciones en código |
 
-| Organization | id, name, slug (unique) | |
+| Organization | id, name, slug (unique), joinCode? (unique, sin guion; null = desactivado) | |
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
 | OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
 | Notification | id, type (NotificationType), taskTitle, xp, level?, note?, actorName?, dueDate? (nueva fecha si se movió), readAt?, createdAt, userId, organizationId | Copia los datos de la tarea (sobrevive a editarla o borrarla); cascade con User y Organization; índice (userId, createdAt); máx. 50 por usuario |
@@ -238,6 +241,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 - 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
+- 2026-10-30: Código para unirse: uno por organización, apagado por defecto. Solo dueños y admins lo ven y lo gestionan; con él siempre se entra como MEMBER. Se guarda en texto plano (no hash como los enlaces de invitación) porque el admin debe poder volver a verlo y copiarlo; lo protege el límite de intentos y se puede reemplazar.
 - 2026-10-30: En el calendario se arrastran las misiones personales pendientes y, solo para dueños y admins, las tareas de equipo pendientes de sus organizaciones (los miembros no, ni siquiera las suyas). Lo que está en revisión o completado no se mueve. Se usa DnD nativo de HTML5, sin librería; en touch no funciona, así que el lápiz de cada fila abre el formulario de edición.
 - 2026-10-30: `requireUser` toma nombre, usuario y correo de la base (`currentAccount` en session-version.ts, la misma consulta que ya validaba sessionVersion), no del JWT: así los cambios de perfil se ven sin volver a iniciar sesión. El JWT conserva los valores del login, pero nada del servidor los lee.
 - 2026-10-30: El cambio de correo se aplica sin confirmación por correo (pedido del usuario); solo hay un diálogo "¿Guardar los cambios?".
@@ -339,6 +343,7 @@ Prioridad 2 — funcionalidad
 - [ ] Historial: subidas de nivel y tareas reabiertas (hoy no se registran como eventos).
 - [ ] Estadísticas de equipo para dueños/admins.
 - [x] Calendario: arrastrar misiones personales para cambiar la fecha.
+- [x] Unirse a una organización con código (además de la invitación por correo).
 - [x] Calendario: dueños/admins arrastran tareas de equipo pendientes; el asignado recibe aviso.
 - [ ] Calendario: vista semanal; arrastre táctil (hoy en móvil se usa el lápiz → formulario).
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
@@ -357,6 +362,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Rama `feat/org-join-code` (sobre `feat/calendar-drag-org`): unirse a organizaciones con código, panel del código en Miembros, migración `org_join_code`. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag-org` (sobre `feat/calendar-drag`): dueños/admins arrastran tareas de equipo en el calendario, notificación ORG_TASK_RESCHEDULED al asignado, migración `org_task_rescheduled`. 255 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag` (sobre `feat/edit-profile`): arrastrar misiones a otro día en el calendario, Deshacer, editar desde el panel del día. 248 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/edit-profile` (sobre `feat/missions-page`): editar nombre, apellidos, usuario y correo en /configuracion con confirmación; requireUser lee el perfil de la base. 243 pruebas pasan, build OK.

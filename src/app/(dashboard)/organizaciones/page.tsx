@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import CreateOrganizationForm from "@/components/organization/CreateOrganizationForm";
+import JoinOrganizationForm from "@/components/organization/JoinOrganizationForm";
 import RoleBadge from "@/components/organization/RoleBadge";
 import { getMyOrganizations } from "@/lib/data/organizations";
 import { requireUser } from "@/lib/session";
@@ -29,6 +30,16 @@ export default async function OrganizationsPage() {
         <CreateOrganizationForm />
       </section>
 
+      <section aria-labelledby="join-heading" className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <div>
+          <h2 id="join-heading" className="font-semibold">
+            Unirse a una organización
+          </h2>
+          <p className="text-sm text-slate-400">Pide el código a un dueño o admin del equipo. Entrarás como miembro.</p>
+        </div>
+        <JoinOrganizationForm />
+      </section>
+
       <section aria-labelledby="mine-heading" className="space-y-4">
         <h2 id="mine-heading" className="text-sm font-medium tracking-wide text-slate-400 uppercase">
           Tus organizaciones
@@ -41,7 +52,7 @@ export default async function OrganizationsPage() {
             </span>
             <p className="font-medium text-slate-200">Aún no perteneces a ninguna</p>
             <p className="max-w-sm text-sm text-slate-500">
-              Crea una arriba o pide a alguien que te invite con tu correo.
+              Crea una, únete con un código o pide a alguien que te invite con tu correo.
             </p>
           </div>
         ) : (
