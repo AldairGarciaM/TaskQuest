@@ -56,7 +56,7 @@ src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claim
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
-src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, setTaskCompleted, deleteTask
+src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, rescheduleTask, setTaskCompleted, deleteTask
 src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
 src/app/auth/layout.tsx     layout de login/registro → usa AuthShell
 src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl; avisos ?registered=1, ?restablecida=1, ?expirada=1)
@@ -78,7 +78,7 @@ src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mí
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
-src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; Motion)
+src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; arrastrar misiones pendientes (chips de la celda o filas del panel, HTML5 DnD, sm+) a otro día con UI optimista y toast con Deshacer; botón lápiz por fila abre TaskFormSheet para editar o cambiar fecha (alternativa en móvil/teclado). La celda es un div (drop target) con el botón de selección absoluto debajo y los chips encima; Motion)
 src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, tooltip por hover/foco, etiqueta solo en el pico, "Ver como tabla"), chart-utils (niceMax, compact, SERIES_COLORS validados)
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
@@ -183,6 +183,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `changePassword({currentPassword, newPassword})` | `src/app/actions/account.ts` | Requiere sesión. Verifica la actual (5 fallos/15 min por usuario, luego bloquea); la nueva debe ser distinta. Cambia el hash, incrementa sessionVersion (cierra todas las sesiones) y borra enlaces de restablecimiento pendientes |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
+| `rescheduleTask(id, dueDate)` | idem | Solo cambia dueDate ("YYYY-MM-DD", dueDateSchema); misiones propias y pendientes (completadas → error). Revalida /, /misiones y /calendario |
 | `setTaskCompleted(id, bool)` | idem | Transacción: cambia estado con update condicional (sin XP doble), sincroniza misiones diarias (otorga o retira bono), suma/resta XP, recalcula nivel y desbloquea logros. Devuelve `{ xpDelta, bonusXp, dailyRewards, achievements, level, leveledUp }` |
 | `deleteTask(id)` | idem | Borra; conserva la XP ya ganada |
 | `createOrganization(input)` | `src/app/actions/organizations.ts` | Crea org + membresía OWNER; slug con sufijo aleatorio (reintenta en P2002); máx. 10 como dueño |
@@ -236,6 +237,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 - 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
+- 2026-10-30: En el calendario solo se arrastran misiones personales pendientes. Las de equipo siguen de solo lectura (su fecha la gestiona el tablero) y las completadas no se mueven. Se usa DnD nativo de HTML5, sin librería; en touch no funciona, así que el lápiz de cada fila abre el formulario de edición.
 - 2026-10-30: `requireUser` toma nombre, usuario y correo de la base (`currentAccount` en session-version.ts, la misma consulta que ya validaba sessionVersion), no del JWT: así los cambios de perfil se ven sin volver a iniciar sesión. El JWT conserva los valores del login, pero nada del servidor los lee.
 - 2026-10-30: El cambio de correo se aplica sin confirmación por correo (pedido del usuario); solo hay un diálogo "¿Guardar los cambios?".
 - 2026-10-29: Cambiar contraseña revoca también la sesión actual (sessionVersion es una sola por usuario); el cliente vuelve a iniciar sesión al instante con la nueva para no sacar a la persona. Desde /configuracion no se enlaza a /auth/recuperar porque el proxy redirige /auth/* a "/" con sesión.
@@ -335,7 +337,8 @@ Prioridad 2 — funcionalidad
 - [x] Historial de actividad.
 - [ ] Historial: subidas de nivel y tareas reabiertas (hoy no se registran como eventos).
 - [ ] Estadísticas de equipo para dueños/admins.
-- [ ] Calendario: arrastrar para cambiar la fecha, vista semanal.
+- [x] Calendario: arrastrar misiones personales para cambiar la fecha.
+- [ ] Calendario: vista semanal; arrastre táctil (hoy en móvil se usa el lápiz → formulario).
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
 Prioridad 3 — UX
@@ -352,6 +355,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Rama `feat/calendar-drag` (sobre `feat/edit-profile`): arrastrar misiones a otro día en el calendario, Deshacer, editar desde el panel del día. 248 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/edit-profile` (sobre `feat/missions-page`): editar nombre, apellidos, usuario y correo en /configuracion con confirmación; requireUser lee el perfil de la base. 243 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/missions-page` (sobre `feat/mobile-layout`): página /misiones, dashboard con resumen de 5 misiones, búsqueda y filtro por dificultad.
 - 2026-10-29: Rama `feat/mobile-layout` (sobre `feat/change-password`): navegación móvil con Sheet, navbar y márgenes adaptados, ajustes de tarjetas y filtros. Build OK (sin revisión visual en navegador).

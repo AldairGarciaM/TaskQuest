@@ -1,16 +1,19 @@
 "use client";
 
-import { CalendarPlus, CircleCheck, CircleDashed, UserRound, Users } from "lucide-react";
+import { CalendarPlus, CircleCheck, CircleDashed, GripVertical, Pencil, UserRound, Users } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
-import { useOptimistic, useRef, useState, useTransition, type KeyboardEvent } from "react";
+import { useOptimistic, useRef, useState, useTransition, type DragEvent, type KeyboardEvent } from "react";
+import { toast } from "sonner";
 
+import { rescheduleTask } from "@/app/actions/tasks";
 import { DifficultyStyles } from "@/app/constants/taskDifficulty";
 import { toggleTaskWithToasts } from "@/components/task/completion";
 import TaskFormSheet from "@/components/task/TaskFormSheet";
 import { Checkbox } from "@/components/ui/checkbox";
-import { dayLabel, monthGrid, WEEKDAY_LABELS, type CalendarDay, type YearMonth } from "@/lib/calendar";
+import { dayLabel, monthGrid, relativeDayLabel, WEEKDAY_LABELS, type CalendarDay, type YearMonth } from "@/lib/calendar";
 import type { CalendarMonth, CalendarOrgTask } from "@/lib/data/calendar";
+import type { TaskDTO } from "@/lib/data/dashboard";
 import { cn } from "@/lib/utils";
 
 import { ownership } from "./ownership";
@@ -49,15 +52,27 @@ function isPending(entry: Entry) {
   return entry.task.status === "PENDING";
 }
 
-function applyToggle(tasks: PersonalTask[], change: { id: string; completed: boolean }): PersonalTask[] {
-  return tasks.map((task) =>
-    task.id === change.id ? { ...task, status: change.completed ? "COMPLETED" : "PENDING" } : task,
-  );
+type OptimisticChange =
+  | { type: "toggle"; id: string; completed: boolean }
+  | { type: "move"; id: string; dueDate: string };
+
+function applyChange(tasks: PersonalTask[], change: OptimisticChange): PersonalTask[] {
+  return tasks.map((task) => {
+    if (task.id !== change.id) return task;
+    return change.type === "toggle"
+      ? { ...task, status: change.completed ? "COMPLETED" : "PENDING" }
+      : { ...task, dueDate: change.dueDate };
+  });
+}
+
+/** Only pending personal tasks can be dragged; team tasks are rescheduled on their board. */
+function isMovable(entry: Entry): entry is { kind: "personal"; task: PersonalTask } {
+  return entry.kind === "personal" && isPending(entry);
 }
 
 export default function CalendarView({ month, today, data, userId, initialDay }: CalendarViewProps) {
   const reduceMotion = useReducedMotion();
-  const [tasks, applyOptimistic] = useOptimistic(data.tasks, applyToggle);
+  const [tasks, applyOptimistic] = useOptimistic(data.tasks, applyChange);
   const [, startTransition] = useTransition();
   const grid = monthGrid(month);
   const [selected, setSelected] = useState(
@@ -68,6 +83,10 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
   );
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  /** Task open in the sheet; null creates a new one. */
+  const [editing, setEditing] = useState<TaskDTO | null>(null);
+  const [dragging, setDragging] = useState<PersonalTask | null>(null);
+  const [dropDay, setDropDay] = useState<string | null>(null);
   const cells = useRef(new Map<string, HTMLButtonElement>());
 
   const byDay = new Map<string, Entry[]>();
@@ -82,9 +101,60 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
 
   function toggle(task: PersonalTask, completed: boolean) {
     startTransition(async () => {
-      applyOptimistic({ id: task.id, completed });
+      applyOptimistic({ type: "toggle", id: task.id, completed });
       await toggleTaskWithToasts(task, completed);
     });
+  }
+
+  function move(task: PersonalTask, dueDate: string, offerUndo = true) {
+    if (task.dueDate === dueDate) return;
+    startTransition(async () => {
+      applyOptimistic({ type: "move", id: task.id, dueDate });
+      const result = await rescheduleTask(task.id, dueDate);
+      if (!result.ok) {
+        toast.error(result.error ?? "No pudimos mover la misión.");
+        return;
+      }
+      if (!offerUndo) return;
+      toast.success("Misión movida", {
+        description: `${task.title} · ${relativeDayLabel(dueDate, today)}`,
+        action: { label: "Deshacer", onClick: () => move({ ...task, dueDate }, task.dueDate, false) },
+      });
+    });
+  }
+
+  function openForm(task: TaskDTO | null) {
+    setEditing(task);
+    setFormKey((key) => key + 1);
+    setFormOpen(true);
+  }
+
+  function startDrag(event: DragEvent, task: PersonalTask) {
+    event.dataTransfer.effectAllowed = "move";
+    // Some browsers won't start a drag without data.
+    event.dataTransfer.setData("text/plain", task.title);
+    setDragging(task);
+  }
+
+  function endDrag() {
+    setDragging(null);
+    setDropDay(null);
+  }
+
+  function dragOver(event: DragEvent, key: string) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropDay(key);
+  }
+
+  function drop(event: DragEvent, key: string) {
+    event.preventDefault();
+    if (dragging) {
+      move(dragging, key);
+      setSelected(key);
+    }
+    endDrag();
   }
 
   function select(key: string, focus = false) {
@@ -135,6 +205,9 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
               <span className="size-2 rounded-full bg-sky-400" aria-hidden /> Equipo
             </span>
           </span>
+          <span className="hidden w-full text-slate-500 lg:block">
+            Arrastra una misión pendiente a otro día para cambiar su fecha.
+          </span>
         </div>
 
         <div className="grid grid-cols-7 border-b border-slate-800 pb-2" aria-hidden>
@@ -159,6 +232,15 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
               isToday={day.key === today}
               isSelected={day.key === selected}
               isPast={day.key < today}
+              isDropTarget={dropDay === day.key}
+              draggingId={dragging?.id ?? null}
+              onChipDragStart={startDrag}
+              onDragEnd={endDrag}
+              onDragOver={(event) => dragOver(event, day.key)}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropDay(null);
+              }}
+              onDrop={(event) => drop(event, day.key)}
               buttonRef={(node) => {
                 if (node) cells.current.set(day.key, node);
                 else cells.current.delete(day.key);
@@ -189,10 +271,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
           </div>
           <button
             type="button"
-            onClick={() => {
-              setFormKey((key) => key + 1);
-              setFormOpen(true);
-            }}
+            onClick={() => openForm(null)}
             className="flex h-9 shrink-0 items-center gap-2 rounded-xl bg-violet-600 px-3 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-violet-500 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-violet-400/50 focus-visible:outline-none"
           >
             <CalendarPlus size={16} aria-hidden /> Nueva
@@ -217,7 +296,15 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
                   transition={{ duration: 0.2, ease: EASE_OUT }}
                 >
                   {entry.kind === "personal" ? (
-                    <PersonalRow task={entry.task} overdue={entry.task.dueDate < today} onToggle={toggle} />
+                    <PersonalRow
+                      task={entry.task}
+                      overdue={entry.task.dueDate < today}
+                      isDragging={dragging?.id === entry.task.id}
+                      onToggle={toggle}
+                      onEdit={() => openForm(entry.task)}
+                      onDragStart={startDrag}
+                      onDragEnd={endDrag}
+                    />
                   ) : (
                     <OrgRow task={entry.task} overdue={entry.task.dueDate < today} userId={userId} />
                   )}
@@ -231,7 +318,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
       <TaskFormSheet
         open={formOpen}
         onOpenChange={setFormOpen}
-        task={null}
+        task={editing}
         formKey={formKey}
         defaultDueDate={selected}
       />
@@ -245,12 +332,35 @@ interface DayCellProps {
   isToday: boolean;
   isSelected: boolean;
   isPast: boolean;
+  isDropTarget: boolean;
+  draggingId: string | null;
+  onChipDragStart: (event: DragEvent, task: PersonalTask) => void;
+  onDragEnd: () => void;
+  onDragOver: (event: DragEvent<HTMLDivElement>) => void;
+  onDragLeave: (event: DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
   buttonRef: (node: HTMLButtonElement | null) => void;
   onSelect: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }
 
-function DayCell({ day, entries, isToday, isSelected, isPast, buttonRef, onSelect, onKeyDown }: DayCellProps) {
+function DayCell({
+  day,
+  entries,
+  isToday,
+  isSelected,
+  isPast,
+  isDropTarget,
+  draggingId,
+  onChipDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  buttonRef,
+  onSelect,
+  onKeyDown,
+}: DayCellProps) {
   const pending = entries.filter(isPending);
   const hasOverdue = isPast && pending.length > 0;
   const hidden = entries.length - CHIPS_PER_DAY;
@@ -259,22 +369,35 @@ function DayCell({ day, entries, isToday, isSelected, isPast, buttonRef, onSelec
       ? "sin tareas"
       : `${entries.length} ${entries.length === 1 ? "tarea" : "tareas"}${hasOverdue ? `, ${pending.length} vencida${pending.length === 1 ? "" : "s"}` : ""}`;
 
+  // The cell is the drop target; the button underneath handles selection and keyboard, and the
+  // chips sit above it (outside the button, where browsers let them be dragged).
   return (
-    <button
-      ref={buttonRef}
-      type="button"
-      tabIndex={isSelected ? 0 : -1}
-      aria-pressed={isSelected}
-      aria-label={`${dayLabel(day.key)}${isToday ? " (hoy)" : ""}: ${summary}`}
-      onClick={onSelect}
-      onKeyDown={onKeyDown}
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       className={cn(
-        "flex min-h-14 flex-col items-stretch gap-1 rounded-xl border p-1.5 text-left transition-[background-color,border-color] duration-150 focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:outline-none sm:min-h-28 sm:p-2",
+        "relative flex min-h-14 flex-col items-stretch gap-1 rounded-xl border p-1.5 transition-[background-color,border-color] duration-150 sm:min-h-28 sm:p-2",
         day.inMonth ? "bg-slate-900" : "bg-slate-950/40",
-        isSelected ? "border-violet-500/70 bg-violet-500/[0.06]" : "border-transparent hover:border-slate-700",
+        isDropTarget
+          ? "border-dashed border-violet-400 bg-violet-500/10"
+          : isSelected
+            ? "border-violet-500/70 bg-violet-500/[0.06]"
+            : "border-transparent hover:border-slate-700",
       )}
     >
-      <span className="flex items-center justify-between">
+      <button
+        ref={buttonRef}
+        type="button"
+        tabIndex={isSelected ? 0 : -1}
+        aria-pressed={isSelected}
+        aria-label={`${dayLabel(day.key)}${isToday ? " (hoy)" : ""}: ${summary}`}
+        onClick={onSelect}
+        onKeyDown={onKeyDown}
+        className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:outline-none"
+      />
+
+      <span className="pointer-events-none relative flex items-center justify-between">
         <span
           className={cn(
             "grid size-6 place-items-center rounded-full text-xs font-medium tabular-nums",
@@ -288,7 +411,7 @@ function DayCell({ day, entries, isToday, isSelected, isPast, buttonRef, onSelec
 
       {/* Phones: one dot per task. */}
       {entries.length > 0 && (
-        <span className="flex flex-wrap gap-0.5 sm:hidden" aria-hidden>
+        <span className="pointer-events-none relative flex flex-wrap gap-0.5 sm:hidden" aria-hidden>
           {entries.slice(0, 4).map((entry) => (
             <span
               key={`${entry.kind}-${entry.task.id}`}
@@ -301,12 +424,20 @@ function DayCell({ day, entries, isToday, isSelected, isPast, buttonRef, onSelec
         </span>
       )}
 
-      <span className="hidden flex-col gap-1 sm:flex" aria-hidden>
+      <span className="pointer-events-none relative hidden flex-col gap-1 sm:flex" aria-hidden>
         {entries.slice(0, CHIPS_PER_DAY).map((entry) => (
           <span
             key={`${entry.kind}-${entry.task.id}`}
+            {...(isMovable(entry) && {
+              draggable: true,
+              onDragStart: (event: DragEvent) => onChipDragStart(event, entry.task),
+              onDragEnd,
+              onClick: onSelect,
+            })}
             className={cn(
-              "flex items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-[11px] leading-4",
+              "flex items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-[11px] leading-4 transition-opacity duration-150",
+              isMovable(entry) && "pointer-events-auto cursor-grab active:cursor-grabbing",
+              draggingId === entry.task.id && "opacity-40",
               isDone(entry)
                 ? "text-slate-500 line-through"
                 : entry.kind === "org"
@@ -326,24 +457,44 @@ function DayCell({ day, entries, isToday, isSelected, isPast, buttonRef, onSelec
         ))}
         {hidden > 0 && <span className="px-1.5 text-[11px] text-slate-500">+{hidden} más</span>}
       </span>
-    </button>
+    </div>
   );
 }
 
 function PersonalRow({
   task,
   overdue,
+  isDragging,
   onToggle,
+  onEdit,
+  onDragStart,
+  onDragEnd,
 }: {
   task: PersonalTask;
   overdue: boolean;
+  isDragging: boolean;
   onToggle: (task: PersonalTask, completed: boolean) => void;
+  onEdit: () => void;
+  onDragStart: (event: DragEvent, task: PersonalTask) => void;
+  onDragEnd: () => void;
 }) {
   const completed = task.status === "COMPLETED";
   const style = DifficultyStyles[task.difficulty];
 
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+    <div
+      draggable={!completed}
+      onDragStart={(event) => onDragStart(event, task)}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 transition-opacity duration-150",
+        !completed && "lg:cursor-grab lg:active:cursor-grabbing",
+        isDragging && "opacity-40",
+      )}
+    >
+      {!completed && (
+        <GripVertical size={16} aria-hidden className="mt-0.5 -mr-2 hidden shrink-0 text-slate-600 lg:block" />
+      )}
       <Checkbox
         checked={completed}
         onCheckedChange={(checked) => onToggle(task, checked)}
@@ -359,9 +510,19 @@ function PersonalRow({
           {overdue && !completed && <span className="text-rose-300">Vencida</span>}
         </p>
       </div>
-      <span className={cn("text-sm font-semibold whitespace-nowrap tabular-nums", completed ? "text-slate-500" : "text-green-400")}>
-        +{task.xpReward} XP
-      </span>
+      <div className="flex flex-col items-end gap-1">
+        <span className={cn("text-sm font-semibold whitespace-nowrap tabular-nums", completed ? "text-slate-500" : "text-green-400")}>
+          +{task.xpReward} XP
+        </span>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Editar "${task.title}" o cambiar su fecha`}
+          className="grid size-7 place-items-center rounded-lg text-slate-500 transition-[background-color,color,transform] duration-150 hover:bg-slate-800 hover:text-slate-200 active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:outline-none"
+        >
+          <Pencil size={14} aria-hidden />
+        </button>
+      </div>
     </div>
   );
 }

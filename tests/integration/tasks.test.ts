@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createTask, deleteTask, setTaskCompleted, updateTask } from "@/app/actions/tasks";
+import { createTask, deleteTask, rescheduleTask, setTaskCompleted, updateTask } from "@/app/actions/tasks";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -125,6 +125,55 @@ describe("updateTask", () => {
     if (!result.ok) expect(result.fieldErrors?.difficulty).toBeDefined();
 
     expect(await updateTask(task.id, { title: "Renombrada", difficulty: "EPIC" })).toEqual({ ok: true });
+  });
+});
+
+describe("rescheduleTask", () => {
+  const dueOf = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id } })).dueDate?.toISOString();
+
+  it("moves a pending task to another day without touching anything else", async () => {
+    await createSignedInUser();
+    const task = await newTask({ title: "Mover", difficulty: "HARD", dueDate: "2026-11-02" });
+
+    expect(await rescheduleTask(task.id, "2026-11-05")).toEqual({ ok: true });
+    const moved = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
+    expect(moved.dueDate?.toISOString()).toBe("2026-11-05T00:00:00.000Z");
+    expect(moved).toMatchObject({ title: "Mover", difficulty: "HARD", xpReward: task.xpReward, status: "PENDING" });
+  });
+
+  it("gives a date to a task that had none", async () => {
+    await createSignedInUser();
+    const task = await newTask({ title: "Sin fecha", difficulty: "EASY" });
+
+    expect((await rescheduleTask(task.id, "2026-11-10")).ok).toBe(true);
+    expect(await dueOf(task.id)).toBe("2026-11-10T00:00:00.000Z");
+  });
+
+  it("refuses completed tasks and invalid dates", async () => {
+    await createSignedInUser();
+    const task = await newTask({ title: "Hecha", difficulty: "EASY", dueDate: "2026-11-02" });
+    await setTaskCompleted(task.id, true);
+
+    expect(await rescheduleTask(task.id, "2026-11-05")).toMatchObject({ ok: false, error: expect.stringMatching(/completadas/) });
+    expect(await rescheduleTask(task.id, "2026-13-40")).toEqual({ ok: false, error: "Fecha no válida." });
+    expect(await rescheduleTask(task.id, null)).toEqual({ ok: false, error: "Fecha no válida." });
+    expect(await dueOf(task.id)).toBe("2026-11-02T00:00:00.000Z");
+  });
+
+  it("never moves another user's task", async () => {
+    const owner = await createSignedInUser();
+    const task = await newTask({ title: "Ajena", difficulty: "EASY", dueDate: "2026-11-02" });
+    const intruder = await createUser();
+    signInAs(intruder);
+
+    expect(await rescheduleTask(task.id, "2026-11-05")).toEqual({ ok: false, error: "No encontramos esa misión." });
+    expect(await dueOf(task.id)).toBe("2026-11-02T00:00:00.000Z");
+    signInAs(owner);
+  });
+
+  it("requires a session", async () => {
+    signOut();
+    await expect(rescheduleTask("x", "2026-11-05")).rejects.toThrow(/NEXT_REDIRECT/);
   });
 });
 

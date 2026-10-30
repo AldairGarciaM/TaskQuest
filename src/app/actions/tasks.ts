@@ -7,7 +7,7 @@ import { dueDateFromInput } from "@/lib/dates";
 import { syncDailyMissions, unlockAchievements } from "@/lib/gamification/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { taskIdSchema, taskInputSchema, type TaskFieldErrors } from "@/lib/validations/task";
+import { dueDateSchema, taskIdSchema, taskInputSchema, type TaskFieldErrors } from "@/lib/validations/task";
 import { levelFromXp, XP_BY_DIFFICULTY } from "@/lib/xp";
 
 type Failure = { ok: false; error?: string; fieldErrors?: TaskFieldErrors };
@@ -85,6 +85,34 @@ export async function updateTask(taskId: unknown, input: unknown): Promise<Resul
     });
   } catch (error) {
     console.error("updateTask failed", error);
+    return GENERIC_ERROR;
+  }
+
+  revalidatePath("/");
+  revalidatePath("/misiones");
+  revalidatePath("/calendario");
+  return { ok: true };
+}
+
+/** Moves a pending task to another day (dragging it on the calendar). */
+export async function rescheduleTask(taskId: unknown, dueDate: unknown): Promise<Result> {
+  const user = await requireUser();
+  const id = taskIdSchema.safeParse(taskId);
+  if (!id.success) return NOT_FOUND;
+  const day = dueDateSchema.safeParse(dueDate);
+  if (!day.success) return { ok: false, error: "Fecha no válida." };
+
+  try {
+    const task = await prisma.task.findFirst({ where: { id: id.data, userId: user.id }, select: { status: true } });
+    if (!task) return NOT_FOUND;
+    if (task.status === "COMPLETED") return { ok: false, error: "Las misiones completadas no se pueden mover." };
+
+    await prisma.task.updateMany({
+      where: { id: id.data, userId: user.id },
+      data: { dueDate: dueDateFromInput(day.data) },
+    });
+  } catch (error) {
+    console.error("rescheduleTask failed", error);
     return GENERIC_ERROR;
   }
 

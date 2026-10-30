@@ -7,6 +7,9 @@ export const DESCRIPTION_MAX = 500;
 
 export const taskIdSchema = z.string().min(1).max(64);
 
+/** Plain calendar date, "YYYY-MM-DD". */
+export const dueDateSchema = z.iso.date({ error: "Fecha no válida" });
+
 export const taskInputSchema = z.object({
   title: z
     .string()
@@ -22,7 +25,7 @@ export const taskInputSchema = z.object({
   difficulty: z.enum(DIFFICULTIES, { error: "Elige una dificultad" }),
   // Plain calendar date from <input type="date">; empty means no due date.
   dueDate: z
-    .union([z.iso.date({ error: "Fecha no válida" }), z.literal("")])
+    .union([dueDateSchema, z.literal("")])
     .optional()
     .transform((value) => value || undefined),
 });
