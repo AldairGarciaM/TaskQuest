@@ -64,7 +64,7 @@ export default function InviteMemberForm({ organizationId, roles }: InviteMember
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} noValidate className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-start">
+      <form onSubmit={handleSubmit} noValidate className="grid gap-3 @md:grid-cols-[1fr_auto_auto] @md:items-start">
         <FormField
           label="Correo"
           name="email"
@@ -85,7 +85,7 @@ export default function InviteMemberForm({ organizationId, roles }: InviteMember
               id="invite-role"
               name="role"
               defaultValue="MEMBER"
-              className="h-11 w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 sm:w-36"
+              className="h-11 w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 text-sm text-slate-100 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 @md:w-36"
             >
               {roles.map((role) => (
                 <option key={role} value={role}>
@@ -102,7 +102,7 @@ export default function InviteMemberForm({ organizationId, roles }: InviteMember
           type="submit"
           disabled={pending}
           aria-busy={pending}
-          className="flex h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-violet-500 active:scale-[0.97] disabled:opacity-70 sm:mt-7"
+          className="flex h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-violet-500 active:scale-[0.97] disabled:opacity-70 @md:mt-7"
         >
           <Send size={16} aria-hidden />
           {pending ? "Invitando…" : "Invitar"}

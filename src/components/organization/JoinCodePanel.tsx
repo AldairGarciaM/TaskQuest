@@ -63,7 +63,7 @@ export default function JoinCodePanel({ organizationId, code }: JoinCodePanelPro
 
   if (!code) {
     return (
-      <div className="flex flex-col gap-4 rounded-xl border border-dashed border-slate-800 p-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-4 rounded-xl border border-dashed border-slate-800 p-4 @sm:flex-row @sm:items-center">
         <p className="flex-1 text-sm text-slate-400">
           Desactivado. Al activarlo, cualquiera con el código puede unirse como miembro desde «Organizaciones».
         </p>
@@ -83,7 +83,7 @@ export default function JoinCodePanel({ organizationId, code }: JoinCodePanelPro
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 @sm:flex-row @sm:items-center">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.output
             key={code}

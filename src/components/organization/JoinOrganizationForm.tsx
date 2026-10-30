@@ -39,7 +39,7 @@ export default function JoinOrganizationForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3 sm:flex-row sm:items-start">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3 @md:flex-row @md:items-start">
       <div className="flex-1">
         <FormField
           label="Código de la organización"
@@ -58,7 +58,7 @@ export default function JoinOrganizationForm() {
         type="submit"
         disabled={pending}
         aria-busy={pending}
-        className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-5 text-sm font-semibold text-slate-100 transition-[background-color,transform] duration-150 hover:bg-slate-700 active:scale-[0.97] disabled:opacity-70 sm:mt-7"
+        className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-5 text-sm font-semibold text-slate-100 transition-[background-color,transform] duration-150 hover:bg-slate-700 active:scale-[0.97] disabled:opacity-70 @md:mt-7"
       >
         <LogIn size={16} aria-hidden />
         {pending ? "Uniéndote…" : "Unirse"}

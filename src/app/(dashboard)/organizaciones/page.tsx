@@ -17,28 +17,39 @@ export default async function OrganizationsPage() {
   const organizations = await getMyOrganizations(user.id);
 
   return (
-    <div className="max-w-3xl space-y-10">
+    <div className="max-w-5xl space-y-10">
       <header className="space-y-1">
         <h1 className="text-3xl font-bold">Organizaciones</h1>
         <p className="text-slate-400">Reúne a tu equipo. La XP que ganen juntos sube su nivel personal.</p>
       </header>
 
-      <section aria-labelledby="create-heading" className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <h2 id="create-heading" className="font-semibold">
-          Nueva organización
-        </h2>
-        <CreateOrganizationForm />
-      </section>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section
+          aria-labelledby="create-heading"
+          className="@container space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5"
+        >
+          <div>
+            <h2 id="create-heading" className="font-semibold">
+              Nueva organización
+            </h2>
+            <p className="text-sm text-slate-400">Serás su dueño: podrás invitar a tu equipo y repartir tareas.</p>
+          </div>
+          <CreateOrganizationForm />
+        </section>
 
-      <section aria-labelledby="join-heading" className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <div>
-          <h2 id="join-heading" className="font-semibold">
-            Unirse a una organización
-          </h2>
-          <p className="text-sm text-slate-400">Pide el código a un dueño o admin del equipo. Entrarás como miembro.</p>
-        </div>
-        <JoinOrganizationForm />
-      </section>
+        <section
+          aria-labelledby="join-heading"
+          className="@container space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5"
+        >
+          <div>
+            <h2 id="join-heading" className="font-semibold">
+              Unirse a una organización
+            </h2>
+            <p className="text-sm text-slate-400">Pide el código a un dueño o admin del equipo. Entrarás como miembro.</p>
+          </div>
+          <JoinOrganizationForm />
+        </section>
+      </div>
 
       <section aria-labelledby="mine-heading" className="space-y-4">
         <h2 id="mine-heading" className="text-sm font-medium tracking-wide text-slate-400 uppercase">

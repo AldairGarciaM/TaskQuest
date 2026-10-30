@@ -48,7 +48,7 @@ src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lis
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
 src/app/(dashboard)/organizaciones/[slug]/organization.ts loadOrganization(slug) con cache(); no miembro → redirect a la lista
 src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del equipo + ranking
-src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  miembros, invitar, pendientes, salir/eliminar
+src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  dos columnas en lg (solo si eres dueño/admin): lista de miembros | Agregar miembros (invitar por correo, código, pendientes); zona de peligro abajo
 src/app/actions/account.ts  changePassword, updateProfile
 src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login), EditProfileForm (nombre, apellidos, usuario, correo; valida en cliente, avisa si no hay cambios y pide confirmación con ConfirmDialog tone="primary")
 src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
@@ -241,6 +241,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 - 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
+- 2026-10-30: Los formularios de organización (crear, unirse, invitar, panel del código) usan container queries (`@container` en la tarjeta + `@md:`/`@sm:`) en vez de breakpoints de viewport, porque viven en columnas de ancho variable.
 - 2026-10-30: Código para unirse: uno por organización, apagado por defecto. Solo dueños y admins lo ven y lo gestionan; con él siempre se entra como MEMBER. Se guarda en texto plano (no hash como los enlaces de invitación) porque el admin debe poder volver a verlo y copiarlo; lo protege el límite de intentos y se puede reemplazar.
 - 2026-10-30: En el calendario se arrastran las misiones personales pendientes y, solo para dueños y admins, las tareas de equipo pendientes de sus organizaciones (los miembros no, ni siquiera las suyas). Lo que está en revisión o completado no se mueve. Se usa DnD nativo de HTML5, sin librería; en touch no funciona, así que el lápiz de cada fila abre el formulario de edición.
 - 2026-10-30: `requireUser` toma nombre, usuario y correo de la base (`currentAccount` en session-version.ts, la misma consulta que ya validaba sessionVersion), no del JWT: así los cambios de perfil se ven sin volver a iniciar sesión. El JWT conserva los valores del login, pero nada del servidor los lee.
@@ -362,6 +363,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Misma rama `feat/org-join-code`: /organizaciones con Nueva | Unirse en dos columnas, y Miembros con lista | opciones para agregar. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/org-join-code` (sobre `feat/calendar-drag-org`): unirse a organizaciones con código, panel del código en Miembros, migración `org_join_code`. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag-org` (sobre `feat/calendar-drag`): dueños/admins arrastran tareas de equipo en el calendario, notificación ORG_TASK_RESCHEDULED al asignado, migración `org_task_rescheduled`. 255 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag` (sobre `feat/edit-profile`): arrastrar misiones a otro día en el calendario, Deshacer, editar desde el panel del día. 248 pruebas pasan, build OK.
