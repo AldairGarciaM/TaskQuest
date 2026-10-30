@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { approveOrgTask, claimOrgTask, createOrgTask, submitOrgTask } from "@/app/actions/org-tasks";
 import { leaveOrganization } from "@/app/actions/organizations";
-import { getMyOrgTasks } from "@/lib/data/org-board";
+import { getDashboardOrgTasks, getMyOrgTasks } from "@/lib/data/org-board";
 import { prisma } from "@/lib/prisma";
 
 import { createUser, signInAs } from "./helpers";
@@ -115,5 +115,68 @@ describe("getMyOrgTasks", () => {
     signInAs(me);
     expect((await leaveOrganization(organization.id)).ok).toBe(true);
     expect(await getMyOrgTasks(me.id)).toEqual([]);
+  });
+});
+
+describe("getDashboardOrgTasks", () => {
+  it("splits my team tasks into still open and completed by me, with their organization", async () => {
+    const owner = await createUser();
+    const me = await createUser();
+    const other = await createUser();
+    const alpha = await organizationWith("Alpha", owner, [me, other]);
+
+    signInAs(owner);
+    await addTask(alpha.id, "Pendiente mía", me.id);
+    const review = await addTask(alpha.id, "En revisión mía", me.id);
+    const done = await addTask(alpha.id, "Hecha por mí", me.id);
+    await addTask(alpha.id, "Libre");
+    const theirs = await addTask(alpha.id, "Hecha por otra persona", other.id);
+
+    signInAs(me);
+    await submitOrgTask(review.id);
+    await submitOrgTask(done.id);
+    signInAs(other);
+    await submitOrgTask(theirs.id);
+    signInAs(owner);
+    await approveOrgTask(done.id);
+    await approveOrgTask(theirs.id);
+
+    const summary = await getDashboardOrgTasks(me.id, 5);
+    expect(summary.active.map((t) => [t.title, t.status]).sort()).toEqual([
+      ["En revisión mía", "IN_REVIEW"],
+      ["Pendiente mía", "PENDING"],
+    ]);
+    expect(summary.completed.map((t) => t.title)).toEqual(["Hecha por mí"]);
+    expect(summary.completedTotal).toBe(1);
+    expect(summary.active[0]).toMatchObject({ organization: { name: "Alpha", slug: alpha.slug }, canReview: false });
+    expect((await getDashboardOrgTasks(owner.id, 5)).active).toEqual([]);
+  });
+
+  it("keeps only the latest completed ones but counts them all, and marks where I manage", async () => {
+    const me = await createUser();
+    const alpha = await organizationWith("Alpha", me, []);
+    signInAs(me);
+    for (const title of ["Primera", "Segunda", "Tercera"]) {
+      const task = await addTask(alpha.id, title, me.id);
+      // A manager's own task skips review.
+      await submitOrgTask(task.id);
+    }
+
+    const summary = await getDashboardOrgTasks(me.id, 2);
+    expect(summary.completed.map((t) => t.title)).toEqual(["Tercera", "Segunda"]);
+    expect(summary.completedTotal).toBe(3);
+    expect(summary.completed[0].canReview).toBe(true);
+  });
+
+  it("drops organizations I left", async () => {
+    const owner = await createUser();
+    const me = await createUser();
+    const alpha = await organizationWith("Alpha", owner, [me]);
+    signInAs(owner);
+    await addTask(alpha.id, "Pendiente mía", me.id);
+
+    signInAs(me);
+    await leaveOrganization(alpha.id);
+    expect(await getDashboardOrgTasks(me.id, 5)).toEqual({ active: [], completed: [], completedTotal: 0 });
   });
 });

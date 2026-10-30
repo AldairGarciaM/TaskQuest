@@ -35,7 +35,7 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 ```
 src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
 src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser() y getNotificationFeed()
-src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines) y un resumen de "Misiones personales" (TaskList preview=5, enlace "Ver N misiones más" a /misiones)
+src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines) y "Resumen de tareas" (TaskSummary: En curso | Completadas, personales + equipo asignadas a mí)
 src/app/(dashboard)/misiones/page.tsx  /misiones: lista completa de misiones personales (TaskList con búsqueda y filtro por dificultad) + "Tareas de organizaciones" (OrgTasksSection)
 src/app/(dashboard)/loading.tsx  skeleton del contenido
 src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
@@ -82,8 +82,8 @@ src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Hom
 src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, tooltip por hover/foco, etiqueta solo en el pico, "Ver como tabla"), chart-utils (niceMax, compact, SERIES_COLORS validados)
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
-src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero)
-src/components/task/        TaskList (filtros Pendientes/Completadas; sin `preview`: búsqueda sin acentos y filtro por dificultad; con `preview`: solo N + enlace a /misiones; optimistic UI, toasts, animación Motion), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
+src/components/dashboard/   ProgressHero (anillo de nivel con avatar, barra de XP, próximo título, franja Racha/Completadas/Pendientes/Logros→/logros; Motion), OrgTasksSection (tareas de equipo: filtros Mías/Libres, agrupadas por organización, enlace al tablero), TaskSummary (dos columnas en lg: En curso = personales pendientes + de equipo asignadas a mí PENDING/IN_REVIEW por fecha; Completadas = personales + de equipo completadas por mí, recientes primero; 5 por columna + "Ver todas en Misiones"; reusa TaskCard/OrgTaskCard), summary.ts (SUMMARY_PER_COLUMN, compartido server/cliente)
+src/components/task/        TaskList (solo /misiones: filtros Pendientes/Completadas, búsqueda sin acentos y filtro por dificultad; optimistic UI, toasts, animación Motion), optimistic.ts (applyTaskAction: toggle/delete, compartido con TaskSummary), TaskCard (checkbox, menú editar/eliminar), completion.tsx (toggleTaskWithToasts: completar + toasts de XP/misiones/logros/nivel; dashboard y calendario),
                             TaskFormSheet (crear/editar en Sheet; prop defaultDueDate), DifficultyPicker, DeleteTaskDialog (AlertDialog Base UI)
 src/components/form/        FormField (input con label/error accesible; usado en auth y misiones)
 src/components/ui/sonner.tsx  <Toaster /> oscuro (montado en el layout raíz)
@@ -106,7 +106,7 @@ src/lib/data/history.ts     getHistory(userId, {filter, before, limit=30}): misi
 src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
-src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100)
+src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100); getDashboardOrgTasks(userId, n): { active, completed (últimas n), completedTotal }, con organización y canReview
 src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug, createJoinCode (8 chars, sin sesgo)
@@ -363,6 +363,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Rama `feat/dashboard-task-summary` (sobre `feat/org-join-code`): el dashboard muestra un "Resumen de tareas" en dos columnas (En curso | Completadas) con personales y de equipo; TaskList pierde el modo preview; OrgTaskCard acepta `organization` para mostrar su nombre. 270 pruebas pasan, build OK.
 - 2026-10-30: Misma rama `feat/org-join-code`: /organizaciones con Nueva | Unirse en dos columnas, y Miembros con lista | opciones para agregar. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/org-join-code` (sobre `feat/calendar-drag-org`): unirse a organizaciones con código, panel del código en Miembros, migración `org_join_code`. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag-org` (sobre `feat/calendar-drag`): dueños/admins arrastran tareas de equipo en el calendario, notificación ORG_TASK_RESCHEDULED al asignado, migración `org_task_rescheduled`. 255 pruebas pasan, build OK.

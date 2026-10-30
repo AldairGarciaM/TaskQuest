@@ -172,3 +172,48 @@ export async function getMyOrgTasks(userId: string): Promise<MyOrgTasksGroup[]> 
     tasks: byOrganization.get(organization.id) ?? [],
   }));
 }
+
+/** A team task on the dashboard summary, with where it comes from. */
+export interface DashboardOrgTask extends OrgTaskDTO {
+  organization: { name: string; slug: string };
+  /** Owner or admin there: their own tasks skip review. */
+  canReview: boolean;
+}
+
+/**
+ * Team tasks for the dashboard summary: the ones assigned to me that are still open (pending or in
+ * review), due soonest first, and the latest ones I completed. Only organizations I still belong to.
+ */
+export async function getDashboardOrgTasks(
+  userId: string,
+  completedLimit: number,
+): Promise<{ active: DashboardOrgTask[]; completed: DashboardOrgTask[]; completedTotal: number }> {
+  const mine = { organization: { members: { some: { userId } } } } as const;
+  const select = { ...taskSelect, organizationId: true, organization: { select: { name: true, slug: true } } } as const;
+
+  const completedWhere = { ...mine, completedById: userId, status: "COMPLETED" } as const;
+  const [memberships, active, completed, completedTotal] = await Promise.all([
+    prisma.membership.findMany({ where: { userId }, select: { organizationId: true, role: true } }),
+    prisma.orgTask.findMany({
+      where: { ...mine, assigneeId: userId, status: { in: ["PENDING", "IN_REVIEW"] } },
+      orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      take: MY_ORG_TASKS_LIMIT,
+      select,
+    }),
+    prisma.orgTask.findMany({
+      where: completedWhere,
+      orderBy: { completedAt: "desc" },
+      take: completedLimit,
+      select,
+    }),
+    prisma.orgTask.count({ where: completedWhere }),
+  ]);
+
+  const managed = new Set(memberships.filter((m) => canManageTasks(m.role)).map((m) => m.organizationId));
+  const toDashboardTask = ({ organizationId, organization, ...task }: (typeof active)[number]): DashboardOrgTask => ({
+    ...toTaskDTO(task),
+    organization,
+    canReview: managed.has(organizationId),
+  });
+  return { active: active.map(toDashboardTask), completed: completed.map(toDashboardTask), completedTotal };
+}

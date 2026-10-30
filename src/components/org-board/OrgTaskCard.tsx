@@ -13,7 +13,9 @@ import {
   Send,
   Trash2,
   Undo2,
+  Users,
 } from "lucide-react";
+import Link from "next/link";
 
 import { DifficultyStyles } from "@/app/constants/taskDifficulty";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +39,8 @@ interface OrgTaskCardProps {
   canReview: boolean;
   busy: boolean;
   onAction: (action: OrgTaskAction, task: OrgTaskDTO) => void;
+  /** Shown above the title outside the board (e.g. the dashboard summary), linking to it. */
+  organization?: { name: string; slug: string };
 }
 
 const dueDateFormatter = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -51,7 +55,15 @@ const primaryButton =
 const ghostButton =
   "flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-slate-400 transition-[background-color,color,transform] duration-150 hover:bg-slate-800 hover:text-slate-200 active:scale-[0.97] disabled:opacity-60";
 
-export default function OrgTaskCard({ task, myUserId, canManage, canReview, busy, onAction }: OrgTaskCardProps) {
+export default function OrgTaskCard({
+  task,
+  myUserId,
+  canManage,
+  canReview,
+  busy,
+  onAction,
+  organization,
+}: OrgTaskCardProps) {
   const style = DifficultyStyles[task.difficulty];
   const DifficultyIcon = style.icon;
   const completed = task.status === "COMPLETED";
@@ -82,6 +94,15 @@ export default function OrgTaskCard({ task, myUserId, canManage, canReview, busy
       <div className="space-y-4 p-5 pl-7">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 space-y-1">
+            {organization && (
+              <Link
+                href={`/organizaciones/${organization.slug}`}
+                className="flex w-fit max-w-full items-center gap-1.5 text-xs font-medium text-sky-300/90 transition-colors duration-150 hover:text-sky-200"
+              >
+                <Users size={13} aria-hidden className="shrink-0" />
+                <span className="truncate">{organization.name}</span>
+              </Link>
+            )}
             <h3 className={cn("font-semibold break-words", completed ? "text-slate-500 line-through" : "text-amber-100")}>
               {task.title}
             </h3>

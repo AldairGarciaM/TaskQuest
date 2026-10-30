@@ -1,8 +1,7 @@
 "use client";
 
-import { ArrowRight, ClipboardList, Plus, Search, X } from "lucide-react";
+import { ClipboardList, Plus, Search, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -14,29 +13,11 @@ import { cn } from "@/lib/utils";
 
 import { toggleTaskWithToasts } from "./completion";
 import DeleteTaskDialog from "./DeleteTaskDialog";
+import { applyTaskAction } from "./optimistic";
 import TaskCard from "./TaskCard";
 import TaskFormSheet from "./TaskFormSheet";
 
 type Filter = "pending" | "completed";
-
-const MISSIONS_PATH = "/misiones";
-
-type OptimisticAction =
-  | { type: "toggle"; id: string; completed: boolean }
-  | { type: "delete"; id: string };
-
-function applyAction(tasks: TaskDTO[], action: OptimisticAction): TaskDTO[] {
-  if (action.type === "delete") return tasks.filter((task) => task.id !== action.id);
-  return tasks.map((task) =>
-    task.id === action.id
-      ? {
-          ...task,
-          status: action.completed ? "COMPLETED" : "PENDING",
-          completedAt: action.completed ? new Date().toISOString() : null,
-        }
-      : task,
-  );
-}
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
@@ -47,12 +28,11 @@ function normalize(text: string) {
 
 interface TaskListProps {
   tasks: TaskDTO[];
-  /** Dashboard summary: show only this many and link to the full list instead of search and filters. */
-  preview?: number;
 }
 
-export default function TaskList({ tasks, preview }: TaskListProps) {
-  const [optimisticTasks, applyOptimistic] = useOptimistic(tasks, applyAction);
+/** Every personal mission, with search and filters (/misiones). The dashboard shows TaskSummary instead. */
+export default function TaskList({ tasks }: TaskListProps) {
+  const [optimisticTasks, applyOptimistic] = useOptimistic(tasks, applyTaskAction);
   const [, startTransition] = useTransition();
   const reduceMotion = useReducedMotion();
 
@@ -78,8 +58,6 @@ export default function TaskList({ tasks, preview }: TaskListProps) {
       (!needle || normalize(`${task.title} ${task.description ?? ""}`).includes(needle)),
   );
   const filtering = needle !== "" || difficulty !== null;
-  const visible = preview === undefined ? matches : matches.slice(0, preview);
-  const hidden = matches.length - visible.length;
 
   function clearFilters() {
     setQuery("");
@@ -152,50 +130,48 @@ export default function TaskList({ tasks, preview }: TaskListProps) {
         </div>
       </div>
 
-      {preview === undefined && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label className="relative block sm:max-w-xs sm:flex-1">
-            <span className="sr-only">Buscar misiones</span>
-            <Search
-              size={16}
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
-            />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por título o descripción"
-              className="h-10 w-full rounded-xl border border-slate-800 bg-slate-950/60 pr-3 pl-9 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:border-violet-500/60 focus-visible:ring-2 focus-visible:ring-violet-500/30 focus-visible:outline-none"
-            />
-          </label>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="relative block sm:max-w-xs sm:flex-1">
+          <span className="sr-only">Buscar misiones</span>
+          <Search
+            size={16}
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-500"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por título o descripción"
+            className="h-10 w-full rounded-xl border border-slate-800 bg-slate-950/60 pr-3 pl-9 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:border-violet-500/60 focus-visible:ring-2 focus-visible:ring-violet-500/30 focus-visible:outline-none"
+          />
+        </label>
 
-          <div role="group" aria-label="Filtrar por dificultad" className="flex flex-wrap gap-2">
-            {DIFFICULTIES.map((value) => {
-              const style = DifficultyStyles[value];
-              const Icon = style.icon;
-              const active = difficulty === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setDifficulty(active ? null : value)}
-                  className={cn(
-                    "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors duration-150",
-                    active
-                      ? cn("border-transparent", style.badge)
-                      : "border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200",
-                  )}
-                >
-                  <Icon size={14} aria-hidden />
-                  {style.label}
-                </button>
-              );
-            })}
-          </div>
+        <div role="group" aria-label="Filtrar por dificultad" className="flex flex-wrap gap-2">
+          {DIFFICULTIES.map((value) => {
+            const style = DifficultyStyles[value];
+            const Icon = style.icon;
+            const active = difficulty === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setDifficulty(active ? null : value)}
+                className={cn(
+                  "flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors duration-150",
+                  active
+                    ? cn("border-transparent", style.badge)
+                    : "border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                )}
+              >
+                <Icon size={14} aria-hidden />
+                {style.label}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {matches.length === 0 && filtering ? (
         <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-800 px-6 py-14 text-center">
@@ -210,12 +186,12 @@ export default function TaskList({ tasks, preview }: TaskListProps) {
             <X size={16} aria-hidden /> Limpiar filtros
           </button>
         </div>
-      ) : visible.length === 0 ? (
+      ) : matches.length === 0 ? (
         <EmptyState filter={filter} hasTasks={optimisticTasks.length > 0} onCreate={() => openForm(null)} />
       ) : (
         <ul className="space-y-4">
           <AnimatePresence initial={false} mode="popLayout">
-            {visible.map((task) => (
+            {matches.map((task) => (
               <motion.li
                 key={task.id}
                 layout={!reduceMotion}
@@ -241,16 +217,6 @@ export default function TaskList({ tasks, preview }: TaskListProps) {
             ))}
           </AnimatePresence>
         </ul>
-      )}
-
-      {hidden > 0 && (
-        <Link
-          href={MISSIONS_PATH}
-          className="flex items-center justify-center gap-2 rounded-xl border border-slate-800 py-3 text-sm font-medium text-slate-300 transition-colors duration-150 hover:bg-slate-800/60 hover:text-slate-50"
-        >
-          Ver {hidden === 1 ? "1 misión más" : `${hidden} misiones más`}
-          <ArrowRight size={16} aria-hidden />
-        </Link>
       )}
 
       <TaskFormSheet open={formOpen} onOpenChange={setFormOpen} task={editing} formKey={formKey} />
