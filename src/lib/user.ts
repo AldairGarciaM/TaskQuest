@@ -11,10 +11,17 @@ export function fullName(user: { firstName: string; lastName: string }): string 
 
 export type ProfileFieldErrors = Partial<Record<keyof RegisterInput, string[]>>;
 
-/** Field errors for an email or username that is already taken, or null if both are free. */
-export async function takenProfileFields(email: string, username: string): Promise<ProfileFieldErrors | null> {
+/**
+ * Field errors for an email or username that is already taken, or null if both are free.
+ * `exceptUserId` ignores that account, so a user editing their profile can keep their own values.
+ */
+export async function takenProfileFields(
+  email: string,
+  username: string,
+  exceptUserId?: string,
+): Promise<ProfileFieldErrors | null> {
   const existing = await prisma.user.findMany({
-    where: { OR: [{ email }, { username }] },
+    where: { OR: [{ email }, { username }], ...(exceptUserId && { NOT: { id: exceptUserId } }) },
     select: { email: true, username: true },
   });
   if (existing.length === 0) return null;

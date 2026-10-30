@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import ChangePasswordForm from "@/components/account/ChangePasswordForm";
+import EditProfileForm from "@/components/account/EditProfileForm";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -32,15 +33,12 @@ export default async function SettingsPage() {
         <p className="text-slate-400">Tu cuenta y su seguridad.</p>
       </header>
 
-      <Section icon={<UserRound size={20} aria-hidden />} title="Cuenta" description="Con tu correo o tu usuario inicias sesión.">
-        <dl className="grid gap-4 text-sm sm:grid-cols-[8rem_1fr]">
-          <dt className="text-slate-400">Nombre</dt>
-          <dd className="font-medium text-slate-100">{user.name}</dd>
-          <dt className="text-slate-400">Usuario</dt>
-          <dd className="font-medium text-slate-100">@{user.username}</dd>
-          <dt className="text-slate-400">Correo</dt>
-          <dd className="font-medium break-all text-slate-100">{user.email}</dd>
-        </dl>
+      <Section icon={<UserRound size={20} aria-hidden />} title="Cuenta" description="Tu nombre y los datos con los que inicias sesión: tu correo o tu usuario.">
+        <EditProfileForm
+          // Remount after saving so the inputs show the normalized values (e.g. lowercase username).
+          key={`${user.firstName}|${user.lastName}|${user.username}|${user.email}`}
+          profile={{ firstName: user.firstName, lastName: user.lastName, username: user.username, email: user.email }}
+        />
       </Section>
 
       <Section

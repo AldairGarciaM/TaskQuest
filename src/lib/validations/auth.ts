@@ -78,3 +78,13 @@ export const changePasswordSchema = z
   });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Account fields editable from /configuracion. */
+export const updateProfileSchema = z.object({
+  firstName: personName("Tu nombre"),
+  lastName: personName("Tus apellidos"),
+  username: usernameSchema,
+  email: emailSchema,
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

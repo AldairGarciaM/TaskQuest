@@ -1,13 +1,20 @@
 "use server";
 
 import { compare } from "bcryptjs";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { clearHits, hit, isLimited, PASSWORD_CHANGE_USER_LIMIT } from "@/lib/rate-limit";
 import { requireUser } from "@/lib/session";
-import { hashPassword } from "@/lib/user";
-import { changePasswordSchema, type ChangePasswordInput } from "@/lib/validations/auth";
+import { hashPassword, takenProfileFields } from "@/lib/user";
+import {
+  changePasswordSchema,
+  updateProfileSchema,
+  type ChangePasswordInput,
+  type UpdateProfileInput,
+} from "@/lib/validations/auth";
 
 export type ChangePasswordResult =
   | { ok: true }
@@ -46,5 +53,34 @@ export async function changePassword(input: unknown): Promise<ChangePasswordResu
     prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
   ]);
   await clearHits(limitKey);
+  return { ok: true };
+}
+
+export type UpdateProfileResult =
+  | { ok: true }
+  | { ok: false; fieldErrors?: Partial<Record<keyof UpdateProfileInput, string[]>>; error?: string };
+
+/** Updates the signed-in user's name, username and email. */
+export async function updateProfile(input: unknown): Promise<UpdateProfileResult> {
+  const user = await requireUser();
+  const parsed = updateProfileSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, fieldErrors: z.flattenError(parsed.error).fieldErrors };
+
+  const { email, username } = parsed.data;
+  const taken = await takenProfileFields(email, username, user.id);
+  if (taken) return { ok: false, fieldErrors: taken };
+
+  try {
+    await prisma.user.update({ where: { id: user.id }, data: parsed.data });
+  } catch (error) {
+    // Someone took the email or username between the check and the update.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { ok: false, fieldErrors: (await takenProfileFields(email, username, user.id)) ?? {} };
+    }
+    console.error("updateProfile failed", error);
+    return { ok: false, error: "No pudimos guardar tus datos. Intenta de nuevo en un momento." };
+  }
+
+  revalidatePath("/", "layout");
   return { ok: true };
 }

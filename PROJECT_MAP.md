@@ -42,15 +42,15 @@ src/app/(dashboard)/error.tsx    error boundary con Reintentar (unstable_retry)
 src/app/(dashboard)/calendario/page.tsx  /calendario?mes=YYYY-MM&dia=YYYY-MM-DD (dia solo abre su mes y lo selecciona): cabecera con mes anterior/siguiente/Hoy + CalendarView (key = mes)
 src/app/(dashboard)/estadisticas/page.tsx  /estadisticas?rango=7|30|90: XP del periodo vs anterior, completadas, % a tiempo, racha actual/mejor, XP por día/semana (apilada), por dificultad, por día de la semana
 src/app/(dashboard)/historial/page.tsx  /historial?filtro=all|missions|team|achievements&antes=ISO: actividad agrupada por día (Hoy/Ayer/…) con XP del día, "Ver más antiguas"
-src/app/(dashboard)/configuracion/page.tsx  /configuracion: datos de la cuenta (solo lectura) + cambiar contraseña
+src/app/(dashboard)/configuracion/page.tsx  /configuracion: editar datos de la cuenta + cambiar contraseña
 src/app/(dashboard)/logros/page.tsx  /logros: catálogo de logros con progreso y fecha de desbloqueo
 src/app/(dashboard)/organizaciones/page.tsx         /organizaciones: crear + lista de mis organizaciones
 src/app/(dashboard)/organizaciones/[slug]/layout.tsx      cabecera (nombre, rol) + pestañas Tablero/Miembros
 src/app/(dashboard)/organizaciones/[slug]/organization.ts loadOrganization(slug) con cache(); no miembro → redirect a la lista
 src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del equipo + ranking
 src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  miembros, invitar, pendientes, salir/eliminar
-src/app/actions/account.ts  changePassword
-src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login)
+src/app/actions/account.ts  changePassword, updateProfile
+src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login), EditProfileForm (nombre, apellidos, usuario, correo; valida en cliente, avisa si no hay cambios y pide confirmación con ConfirmDialog tone="primary")
 src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
 src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
@@ -94,8 +94,8 @@ src/lib/session.ts          requireUser(): usuario de la sesión o redirect a /a
 src/lib/session-version.ts  isSessionCurrent(userId, version), EXPIRED_SESSION_PATH
 src/lib/password-reset.ts   token de restablecimiento (32 bytes, solo hash SHA-256), vence en 60 min, passwordResetUrl, findValidResetToken
 src/lib/safe-redirect.ts    safeCallbackUrl(): solo rutas relativas (evita open redirect)
-src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profileSchema, registerSchema, usernameSchema
-src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados), hashPassword (bcrypt 12)
+src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profileSchema, registerSchema, usernameSchema, updateProfileSchema
+src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados; `exceptUserId` ignora la propia cuenta), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
 src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
@@ -179,6 +179,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `registerUser(input)` | `src/app/auth/actions.ts` | Valida con registerSchema, límite 5/hora por IP (antes de revisar ocupados), revisa correo/usuario ocupados (error en el campo correcto), hashea y crea User |
 | `requestPasswordReset({email})` | `src/app/auth/actions.ts` | Siempre `{ok:true}` exista o no la cuenta. Límite 3/hora por correo y 10/hora por IP. Borra los enlaces anteriores y crea uno (60 min); lo envía por correo (sin SMTP → consola, nunca en la UI) |
 | `resetPassword(token, {password})` | idem | Transacción: valida token vigente, lo marca usado con update condicional (un solo uso en paralelo), cambia el hash, incrementa `sessionVersion` (cierra todas las sesiones) y borra los demás enlaces; limpia el bloqueo de login de la cuenta. Inválido/vencido → `{expired: true}` |
+| `updateProfile({firstName, lastName, username, email})` | `src/app/actions/account.ts` | Requiere sesión. Valida con updateProfileSchema, rechaza correo/usuario de otra cuenta (también P2002 en carrera), no toca sessionVersion. `revalidatePath("/", "layout")` |
 | `changePassword({currentPassword, newPassword})` | `src/app/actions/account.ts` | Requiere sesión. Verifica la actual (5 fallos/15 min por usuario, luego bloquea); la nueva debe ser distinta. Cambia el hash, incrementa sessionVersion (cierra todas las sesiones) y borra enlaces de restablecimiento pendientes |
 | `createTask(input)` | `src/app/actions/tasks.ts` | Crea misión; xpReward lo fija el servidor según dificultad |
 | `updateTask(id, input)` | idem | Edita; si está completada no permite cambiar la dificultad |
@@ -235,6 +236,8 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 - 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
+- 2026-10-30: `requireUser` toma nombre, usuario y correo de la base (`currentAccount` en session-version.ts, la misma consulta que ya validaba sessionVersion), no del JWT: así los cambios de perfil se ven sin volver a iniciar sesión. El JWT conserva los valores del login, pero nada del servidor los lee.
+- 2026-10-30: El cambio de correo se aplica sin confirmación por correo (pedido del usuario); solo hay un diálogo "¿Guardar los cambios?".
 - 2026-10-29: Cambiar contraseña revoca también la sesión actual (sessionVersion es una sola por usuario); el cliente vuelve a iniciar sesión al instante con la nueva para no sacar a la persona. Desde /configuracion no se enlaza a /auth/recuperar porque el proxy redirige /auth/* a "/" con sesión.
 
 ## Variables de entorno
@@ -321,7 +324,8 @@ Prioridad 2 — funcionalidad
 - [ ] Límite por IP depende de `x-real-ip`/`x-forwarded-for`: en producción confiar solo en los que pone el proxy (falsificables si no).
 - [x] Recuperar contraseña por correo; al cambiarla se cierran todas las sesiones.
 - [x] Cambiar contraseña desde /configuracion (cierra las demás sesiones; la actual se renueva).
-- [ ] Editar nombre, usuario o correo desde /configuracion (hoy solo lectura; cambiar correo debería confirmarse por correo).
+- [x] Editar nombre, usuario y correo desde /configuracion, con diálogo de confirmación.
+- [ ] Confirmar por correo el cambio de correo (por ahora se aplica directo, decisión del usuario).
 - [x] CRUD de tareas con Server Actions + validación en servidor.
 - [x] XP y nivel calculados en servidor al completar tareas.
 - [x] Dashboard con datos reales, estado vacío, `loading.tsx` y `error.tsx`.
@@ -348,6 +352,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Rama `feat/edit-profile` (sobre `feat/missions-page`): editar nombre, apellidos, usuario y correo en /configuracion con confirmación; requireUser lee el perfil de la base. 243 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/missions-page` (sobre `feat/mobile-layout`): página /misiones, dashboard con resumen de 5 misiones, búsqueda y filtro por dificultad.
 - 2026-10-29: Rama `feat/mobile-layout` (sobre `feat/change-password`): navegación móvil con Sheet, navbar y márgenes adaptados, ajustes de tarjetas y filtros. Build OK (sin revisión visual en navegador).
 - 2026-10-29: Rama `feat/change-password` (sobre `main`): página /configuracion, cambiar contraseña, engrane del navbar enlazado. 238 pruebas pasan, build OK.

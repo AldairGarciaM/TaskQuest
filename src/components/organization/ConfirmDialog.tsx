@@ -3,23 +3,28 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import type { ReactNode } from "react";
 
+import { cn } from "@/lib/utils";
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
   description: ReactNode;
   confirmLabel: string;
   pending?: boolean;
+  /** "danger" for destructive actions (default), "primary" for plain confirmations. */
+  tone?: "danger" | "primary";
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-/** Destructive confirmation, same look as DeleteTaskDialog. */
+/** Confirmation dialog, same look as DeleteTaskDialog. */
 export default function ConfirmDialog({
   open,
   title,
   description,
   confirmLabel,
   pending = false,
+  tone = "danger",
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -42,7 +47,10 @@ export default function ConfirmDialog({
               onClick={onConfirm}
               disabled={pending}
               aria-busy={pending}
-              className="h-10 flex-1 rounded-xl bg-rose-600 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-rose-500 active:scale-[0.97] disabled:opacity-70"
+              className={cn(
+                "h-10 flex-1 rounded-xl text-sm font-semibold text-white transition-[background-color,transform] duration-150 active:scale-[0.97] disabled:opacity-70",
+                tone === "danger" ? "bg-rose-600 hover:bg-rose-500" : "bg-violet-600 hover:bg-violet-500",
+              )}
             >
               {confirmLabel}
             </button>

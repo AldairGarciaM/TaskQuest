@@ -1,12 +1,12 @@
 import { compare } from "bcryptjs";
 import { describe, expect, it } from "vitest";
 
-import { changePassword } from "@/app/actions/account";
+import { changePassword, updateProfile } from "@/app/actions/account";
 import { prisma } from "@/lib/prisma";
 import { PASSWORD_CHANGE_USER_LIMIT } from "@/lib/rate-limit";
-import { isSessionCurrent } from "@/lib/session-version";
+import { currentAccount, isSessionCurrent } from "@/lib/session-version";
 
-import { createSignedInUser } from "./helpers";
+import { createSignedInUser, createUser } from "./helpers";
 
 // createUser() sets this password.
 const CURRENT = "Secreta123";
@@ -71,5 +71,66 @@ describe("changePassword", () => {
     await expect(changePassword({ currentPassword: CURRENT, newPassword: "NuevaClave456" })).rejects.toThrow(
       /NEXT_REDIRECT/,
     );
+  });
+});
+
+describe("updateProfile", () => {
+  const profile = (overrides: Record<string, string> = {}) => ({
+    firstName: "Ada",
+    lastName: "Lovelace",
+    username: "ada.lovelace",
+    email: "ada@taskquest.test",
+    ...overrides,
+  });
+
+  it("updates the profile with normalized values and keeps sessions alive", async () => {
+    const user = await createSignedInUser();
+    const result = await updateProfile(profile({ username: "  Ada.Lovelace ", email: "ADA@TaskQuest.test" }));
+
+    expect(result).toEqual({ ok: true });
+    const updated = await account(user.id);
+    expect(updated).toMatchObject(profile());
+    expect(updated.sessionVersion).toBe(0);
+    // requireUser reads the profile from here, so the edit shows without signing in again.
+    expect(await currentAccount(user.id, 0)).toEqual(profile());
+  });
+
+  it("lets users keep their own email and username", async () => {
+    const user = await createSignedInUser();
+    const result = await updateProfile({ firstName: "Nuevo", lastName: "Nombre", username: user.username, email: user.email });
+
+    expect(result).toEqual({ ok: true });
+    expect(await account(user.id)).toMatchObject({ firstName: "Nuevo", lastName: "Nombre" });
+  });
+
+  it("rejects an email or username another account uses", async () => {
+    const other = await createUser();
+    const user = await createSignedInUser();
+    const result = await updateProfile(profile({ username: other.username, email: other.email.toUpperCase() }));
+
+    expect(result).toEqual({
+      ok: false,
+      fieldErrors: {
+        email: ["Ya existe una cuenta con este correo"],
+        username: ["Ese nombre de usuario ya está en uso"],
+      },
+    });
+    expect((await account(user.id)).email).toBe(user.email);
+  });
+
+  it("validates every field", async () => {
+    await createSignedInUser();
+    const result = await updateProfile({ firstName: "A", lastName: "", username: "no válido", email: "nope" });
+
+    expect(result.ok === false && Object.keys(result.fieldErrors ?? {}).sort()).toEqual([
+      "email",
+      "firstName",
+      "lastName",
+      "username",
+    ]);
+  });
+
+  it("requires a session", async () => {
+    await expect(updateProfile(profile())).rejects.toThrow(/NEXT_REDIRECT/);
   });
 });
