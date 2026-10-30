@@ -1,4 +1,5 @@
 import type { NotificationType, Prisma } from "@/generated/prisma/client";
+import { dueDateToInput } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 
 /** How many notifications each user keeps; older ones are dropped when a new one arrives. */
@@ -14,6 +15,8 @@ export interface NotificationDTO {
   level: number | null;
   note: string | null;
   actorName: string | null;
+  /** "YYYY-MM-DD": the new due date of a rescheduled task. */
+  dueDate: string | null;
   read: boolean;
   createdAt: string;
   organization: { name: string; slug: string };
@@ -33,9 +36,10 @@ interface ReviewNotice {
   xp?: number;
   level?: number | null;
   note?: string | null;
+  dueDate?: Date | null;
 }
 
-/** Tells the assignee a manager reviewed their task. Runs inside the review's transaction. */
+/** Tells the assignee a manager reviewed or rescheduled their task. Runs inside that change's transaction. */
 export async function notifyReview(tx: Prisma.TransactionClient, notice: ReviewNotice) {
   await tx.notification.create({
     data: {
@@ -47,6 +51,7 @@ export async function notifyReview(tx: Prisma.TransactionClient, notice: ReviewN
       xp: notice.xp ?? 0,
       level: notice.level ?? null,
       note: notice.note ?? null,
+      dueDate: notice.dueDate ?? null,
     },
   });
 
@@ -73,6 +78,7 @@ export async function getNotificationFeed(userId: string): Promise<NotificationF
         level: true,
         note: true,
         actorName: true,
+        dueDate: true,
         readAt: true,
         createdAt: true,
         organization: { select: { name: true, slug: true } },
@@ -83,8 +89,9 @@ export async function getNotificationFeed(userId: string): Promise<NotificationF
 
   return {
     unreadCount,
-    items: rows.map(({ readAt, createdAt, ...n }) => ({
+    items: rows.map(({ readAt, createdAt, dueDate, ...n }) => ({
       ...n,
+      dueDate: dueDate && dueDateToInput(dueDate),
       read: readAt !== null,
       createdAt: createdAt.toISOString(),
     })),

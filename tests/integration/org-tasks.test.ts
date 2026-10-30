@@ -8,11 +8,13 @@ import {
   rejectOrgTask,
   releaseOrgTask,
   reopenOrgTask,
+  rescheduleOrgTask,
   submitOrgTask,
   updateOrgTask,
 } from "@/app/actions/org-tasks";
 import { leaveOrganization, removeMember } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
+import { getCalendarMonth } from "@/lib/data/calendar";
 import { getOrgBoard } from "@/lib/data/org-board";
 import { getOrganizationForMember } from "@/lib/data/organizations";
 import { prisma } from "@/lib/prisma";
@@ -347,6 +349,88 @@ describe("manager actions", () => {
     expect((await deleteOrgTask(task.id)).ok).toBe(true);
     expect(await prisma.orgTask.count()).toBe(0);
     expect((await userXp(member.id)).xp).toBe(50);
+  });
+});
+
+describe("rescheduleOrgTask", () => {
+  const dueOf = async (id: string) => (await taskRow(id)).dueDate?.toISOString();
+
+  it("lets owners and admins move a pending task and tells the assignee", async () => {
+    const { owner, admin, member, organization } = await setup();
+    const task = await newTask(organization.id, { assigneeId: member.id, dueDate: "2026-11-02" });
+
+    expect(await rescheduleOrgTask(task.id, "2026-11-05")).toEqual({ ok: true });
+    signInAs(admin);
+    expect(await rescheduleOrgTask(task.id, "2026-11-06")).toEqual({ ok: true });
+
+    expect(await dueOf(task.id)).toBe("2026-11-06T00:00:00.000Z");
+    expect(await taskRow(task.id)).toMatchObject({ assigneeId: member.id, status: "PENDING" });
+    const notices = await prisma.notification.findMany({ where: { userId: member.id }, orderBy: { createdAt: "asc" } });
+    expect(notices.map((n) => [n.type, n.actorName, n.dueDate?.toISOString()])).toEqual([
+      ["ORG_TASK_RESCHEDULED", owner.firstName, "2026-11-05T00:00:00.000Z"],
+      ["ORG_TASK_RESCHEDULED", admin.firstName, "2026-11-06T00:00:00.000Z"],
+    ]);
+  });
+
+  it("refuses members, even on their own task", async () => {
+    const { member, organization } = await setup();
+    const task = await newTask(organization.id, { assigneeId: member.id, dueDate: "2026-11-02" });
+    signInAs(member);
+
+    expect(await rescheduleOrgTask(task.id, "2026-11-05")).toEqual({
+      ok: false,
+      error: "No tienes permiso para hacer eso.",
+    });
+    expect(await dueOf(task.id)).toBe("2026-11-02T00:00:00.000Z");
+    expect(await prisma.notification.count()).toBe(0);
+  });
+
+  it("hides tasks of other organizations", async () => {
+    const { organization } = await setup();
+    const task = await newTask(organization.id, { dueDate: "2026-11-02" });
+    signInAs(await createUser());
+
+    expect(await rescheduleOrgTask(task.id, "2026-11-05")).toEqual({ ok: false, error: "No encontramos esa tarea." });
+  });
+
+  it("does not notify anyone for open tasks or a manager's own task", async () => {
+    const { owner, organization } = await setup();
+    const open = await newTask(organization.id, { dueDate: "2026-11-02" });
+    const mine = await newTask(organization.id, { assigneeId: owner.id, dueDate: "2026-11-02" });
+
+    expect((await rescheduleOrgTask(open.id, "2026-11-03")).ok).toBe(true);
+    expect((await rescheduleOrgTask(mine.id, "2026-11-03")).ok).toBe(true);
+    expect(await prisma.notification.count()).toBe(0);
+  });
+
+  it("only moves pending tasks to valid dates", async () => {
+    const { owner, member, organization } = await setup();
+    const task = await newTask(organization.id, { assigneeId: member.id, dueDate: "2026-11-02" });
+
+    expect(await rescheduleOrgTask(task.id, "mañana")).toEqual({ ok: false, error: "Fecha no válida." });
+    signInAs(member);
+    await submitOrgTask(task.id);
+    signInAs(owner);
+    expect(await rescheduleOrgTask(task.id, "2026-11-05")).toEqual({
+      ok: false,
+      error: "Revisa la tarea antes de editarla.",
+    });
+    expect(await dueOf(task.id)).toBe("2026-11-02T00:00:00.000Z");
+  });
+
+  it("marks on the calendar which team tasks I can drag", async () => {
+    const { admin, member, organization } = await setup();
+    await newTask(organization.id, { title: "Pendiente", assigneeId: member.id, dueDate: "2026-10-20" });
+    const review = await newTask(organization.id, { title: "En revisión", assigneeId: member.id, dueDate: "2026-10-21" });
+    signInAs(member);
+    await submitOrgTask(review.id);
+
+    const canReschedule = async (userId: string) =>
+      Object.fromEntries(
+        (await getCalendarMonth(userId, { year: 2026, month: 10 })).orgTasks.map((t) => [t.title, t.canReschedule]),
+      );
+    expect(await canReschedule(admin.id)).toEqual({ Pendiente: true, "En revisión": false });
+    expect(await canReschedule(member.id)).toEqual({ Pendiente: false, "En revisión": false });
   });
 });
 

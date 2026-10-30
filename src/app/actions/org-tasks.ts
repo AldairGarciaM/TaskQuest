@@ -10,7 +10,13 @@ import { canManageTasks } from "@/lib/organizations/permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import type { Prisma } from "@/generated/prisma/client";
-import { orgTaskInputSchema, reviewNoteSchema, taskIdSchema, type OrgTaskFieldErrors } from "@/lib/validations/task";
+import {
+  dueDateSchema,
+  orgTaskInputSchema,
+  reviewNoteSchema,
+  taskIdSchema,
+  type OrgTaskFieldErrors,
+} from "@/lib/validations/task";
 import { XP_BY_DIFFICULTY } from "@/lib/xp";
 
 type Failure = { ok: false; error?: string; fieldErrors?: OrgTaskFieldErrors };
@@ -128,6 +134,49 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
     },
   });
   if (count === 0) return { ok: false, error: "Solo se pueden editar tareas pendientes." };
+
+  revalidateBoard();
+  return { ok: true };
+}
+
+/**
+ * Managers move a pending task to another day (dragging it on the calendar), e.g. when something
+ * urgent comes up. The assignee is told, unless they moved it themselves.
+ */
+export async function rescheduleOrgTask(taskId: unknown, dueDate: unknown): Promise<Result> {
+  const user = await requireUser();
+  const found = await taskForMember(taskId, user.id);
+  if (!found) return NOT_FOUND;
+  if (!canManageTasks(found.role)) return FORBIDDEN;
+  const day = dueDateSchema.safeParse(dueDate);
+  if (!day.success) return { ok: false, error: "Fecha no válida." };
+  if (found.task.status !== "PENDING") return { ok: false, error: notEditable(found.task.status) };
+
+  const newDueDate = dueDateFromInput(day.data);
+  try {
+    const moved = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.orgTask.updateMany({
+        where: { id: found.task.id, status: "PENDING" },
+        data: { dueDate: newDueDate },
+      });
+      if (count === 0) return false;
+      if (found.task.assigneeId && found.task.assigneeId !== user.id) {
+        await notifyReview(tx, {
+          type: "ORG_TASK_RESCHEDULED",
+          userId: found.task.assigneeId,
+          organizationId: found.task.organizationId,
+          taskTitle: found.task.title,
+          actorName: user.firstName,
+          dueDate: newDueDate,
+        });
+      }
+      return true;
+    });
+    if (!moved) return { ok: false, error: "Solo se pueden mover tareas pendientes." };
+  } catch (error) {
+    console.error("rescheduleOrgTask failed", error);
+    return GENERIC_ERROR;
+  }
 
   revalidateBoard();
   return { ok: true };

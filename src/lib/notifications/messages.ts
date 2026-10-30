@@ -1,4 +1,5 @@
 import type { NotificationType } from "@/generated/prisma/enums";
+import { dayLabel } from "@/lib/calendar";
 
 interface NotificationContent {
   type: NotificationType;
@@ -7,6 +8,7 @@ interface NotificationContent {
   level: number | null;
   note: string | null;
   actorName: string | null;
+  dueDate?: string | null;
 }
 
 /** The headline and body shown in the bell and in the toast. */
@@ -18,6 +20,15 @@ export function notificationText(n: NotificationContent): { title: string; descr
     return {
       title: `¡Tarea aprobada! +${n.xp} XP`,
       description: `${reviewer} aprobó “${n.taskTitle}” y obtuviste ${n.xp} XP.${levelUp}`,
+    };
+  }
+
+  if (n.type === "ORG_TASK_RESCHEDULED") {
+    return {
+      title: "Cambió la fecha de una tarea",
+      description: n.dueDate
+        ? `${reviewer} movió “${n.taskTitle}” al ${dayLabel(n.dueDate)}.`
+        : `${reviewer} cambió la fecha de “${n.taskTitle}”.`,
     };
   }
 

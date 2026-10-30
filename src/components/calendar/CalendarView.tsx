@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useOptimistic, useRef, useState, useTransition, type DragEvent, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
+import { rescheduleOrgTask } from "@/app/actions/org-tasks";
 import { rescheduleTask } from "@/app/actions/tasks";
 import { DifficultyStyles } from "@/app/constants/taskDifficulty";
 import { toggleTaskWithToasts } from "@/components/task/completion";
@@ -20,7 +21,13 @@ import { ownership } from "./ownership";
 
 type PersonalTask = CalendarMonth["tasks"][number];
 
-type Entry = { kind: "personal"; task: PersonalTask } | { kind: "org"; task: CalendarOrgTask };
+type OrgTask = CalendarMonth["orgTasks"][number];
+
+type Entry = { kind: "personal"; task: PersonalTask } | { kind: "org"; task: OrgTask };
+
+function entryKey(entry: Entry) {
+  return `${entry.kind}-${entry.task.id}`;
+}
 
 interface CalendarViewProps {
   month: YearMonth;
@@ -65,14 +72,19 @@ function applyChange(tasks: PersonalTask[], change: OptimisticChange): PersonalT
   });
 }
 
-/** Only pending personal tasks can be dragged; team tasks are rescheduled on their board. */
-function isMovable(entry: Entry): entry is { kind: "personal"; task: PersonalTask } {
-  return entry.kind === "personal" && isPending(entry);
+function applyOrgMove(tasks: OrgTask[], change: { id: string; dueDate: string }): OrgTask[] {
+  return tasks.map((task) => (task.id === change.id ? { ...task, dueDate: change.dueDate } : task));
+}
+
+/** Pending personal tasks, and pending team tasks of organizations I manage, can be dragged. */
+function isMovable(entry: Entry) {
+  return entry.kind === "personal" ? isPending(entry) : entry.task.canReschedule;
 }
 
 export default function CalendarView({ month, today, data, userId, initialDay }: CalendarViewProps) {
   const reduceMotion = useReducedMotion();
   const [tasks, applyOptimistic] = useOptimistic(data.tasks, applyChange);
+  const [orgTasks, applyOrgOptimistic] = useOptimistic(data.orgTasks, applyOrgMove);
   const [, startTransition] = useTransition();
   const grid = monthGrid(month);
   const [selected, setSelected] = useState(
@@ -85,13 +97,13 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
   const [formKey, setFormKey] = useState(0);
   /** Task open in the sheet; null creates a new one. */
   const [editing, setEditing] = useState<TaskDTO | null>(null);
-  const [dragging, setDragging] = useState<PersonalTask | null>(null);
+  const [dragging, setDragging] = useState<Entry | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null);
   const cells = useRef(new Map<string, HTMLButtonElement>());
 
   const byDay = new Map<string, Entry[]>();
   for (const task of tasks) byDay.set(task.dueDate, [...(byDay.get(task.dueDate) ?? []), { kind: "personal", task }]);
-  for (const task of data.orgTasks) byDay.set(task.dueDate, [...(byDay.get(task.dueDate) ?? []), { kind: "org", task }]);
+  for (const task of orgTasks) byDay.set(task.dueDate, [...(byDay.get(task.dueDate) ?? []), { kind: "org", task }]);
   // Pending first, so a crowded day shows what's still to do.
   for (const entries of byDay.values()) entries.sort((a, b) => Number(isDone(a)) - Number(isDone(b)));
 
@@ -106,19 +118,30 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
     });
   }
 
-  function move(task: PersonalTask, dueDate: string, offerUndo = true) {
+  function move(entry: Entry, dueDate: string, offerUndo = true) {
+    const { task } = entry;
     if (task.dueDate === dueDate) return;
     startTransition(async () => {
-      applyOptimistic({ type: "move", id: task.id, dueDate });
-      const result = await rescheduleTask(task.id, dueDate);
+      let result;
+      if (entry.kind === "personal") {
+        applyOptimistic({ type: "move", id: task.id, dueDate });
+        result = await rescheduleTask(task.id, dueDate);
+      } else {
+        applyOrgOptimistic({ id: task.id, dueDate });
+        result = await rescheduleOrgTask(task.id, dueDate);
+      }
       if (!result.ok) {
-        toast.error(result.error ?? "No pudimos mover la misión.");
+        toast.error(result.error ?? "No pudimos cambiar la fecha.");
         return;
       }
       if (!offerUndo) return;
-      toast.success("Misión movida", {
-        description: `${task.title} · ${relativeDayLabel(dueDate, today)}`,
-        action: { label: "Deshacer", onClick: () => move({ ...task, dueDate }, task.dueDate, false) },
+
+      const assignee = entry.kind === "org" ? entry.task.assignee : null;
+      const notified = assignee && assignee.userId !== userId ? ` · Avisamos a ${assignee.firstName}` : "";
+      const moved = { ...entry, task: { ...task, dueDate } } as Entry;
+      toast.success(entry.kind === "personal" ? "Misión movida" : "Tarea de equipo movida", {
+        description: `${task.title} · ${relativeDayLabel(dueDate, today)}${notified}`,
+        action: { label: "Deshacer", onClick: () => move(moved, task.dueDate, false) },
       });
     });
   }
@@ -129,11 +152,11 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
     setFormOpen(true);
   }
 
-  function startDrag(event: DragEvent, task: PersonalTask) {
+  function startDrag(event: DragEvent, entry: Entry) {
     event.dataTransfer.effectAllowed = "move";
     // Some browsers won't start a drag without data.
-    event.dataTransfer.setData("text/plain", task.title);
-    setDragging(task);
+    event.dataTransfer.setData("text/plain", entry.task.title);
+    setDragging(entry);
   }
 
   function endDrag() {
@@ -206,7 +229,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
             </span>
           </span>
           <span className="hidden w-full text-slate-500 lg:block">
-            Arrastra una misión pendiente a otro día para cambiar su fecha.
+            Arrastra una misión pendiente a otro día para cambiar su fecha. Las de equipo solo las mueven sus dueños y admins.
           </span>
         </div>
 
@@ -233,7 +256,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
               isSelected={day.key === selected}
               isPast={day.key < today}
               isDropTarget={dropDay === day.key}
-              draggingId={dragging?.id ?? null}
+              draggingKey={dragging && entryKey(dragging)}
               onChipDragStart={startDrag}
               onDragEnd={endDrag}
               onDragOver={(event) => dragOver(event, day.key)}
@@ -299,14 +322,21 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
                     <PersonalRow
                       task={entry.task}
                       overdue={entry.task.dueDate < today}
-                      isDragging={dragging?.id === entry.task.id}
+                      isDragging={dragging !== null && entryKey(dragging) === entryKey(entry)}
                       onToggle={toggle}
                       onEdit={() => openForm(entry.task)}
-                      onDragStart={startDrag}
+                      onDragStart={(event) => startDrag(event, entry)}
                       onDragEnd={endDrag}
                     />
                   ) : (
-                    <OrgRow task={entry.task} overdue={entry.task.dueDate < today} userId={userId} />
+                    <OrgRow
+                      task={entry.task}
+                      overdue={entry.task.dueDate < today}
+                      userId={userId}
+                      isDragging={dragging !== null && entryKey(dragging) === entryKey(entry)}
+                      onDragStart={(event) => startDrag(event, entry)}
+                      onDragEnd={endDrag}
+                    />
                   )}
                 </motion.li>
               ))}
@@ -333,8 +363,9 @@ interface DayCellProps {
   isSelected: boolean;
   isPast: boolean;
   isDropTarget: boolean;
-  draggingId: string | null;
-  onChipDragStart: (event: DragEvent, task: PersonalTask) => void;
+  /** entryKey() of the task being dragged. */
+  draggingKey: string | null;
+  onChipDragStart: (event: DragEvent, entry: Entry) => void;
   onDragEnd: () => void;
   onDragOver: (event: DragEvent<HTMLDivElement>) => void;
   onDragLeave: (event: DragEvent<HTMLDivElement>) => void;
@@ -351,7 +382,7 @@ function DayCell({
   isSelected,
   isPast,
   isDropTarget,
-  draggingId,
+  draggingKey,
   onChipDragStart,
   onDragEnd,
   onDragOver,
@@ -430,14 +461,14 @@ function DayCell({
             key={`${entry.kind}-${entry.task.id}`}
             {...(isMovable(entry) && {
               draggable: true,
-              onDragStart: (event: DragEvent) => onChipDragStart(event, entry.task),
+              onDragStart: (event: DragEvent) => onChipDragStart(event, entry),
               onDragEnd,
               onClick: onSelect,
             })}
             className={cn(
               "flex items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-[11px] leading-4 transition-opacity duration-150",
               isMovable(entry) && "pointer-events-auto cursor-grab active:cursor-grabbing",
-              draggingId === entry.task.id && "opacity-40",
+              draggingKey === entryKey(entry) && "opacity-40",
               isDone(entry)
                 ? "text-slate-500 line-through"
                 : entry.kind === "org"
@@ -475,7 +506,7 @@ function PersonalRow({
   isDragging: boolean;
   onToggle: (task: PersonalTask, completed: boolean) => void;
   onEdit: () => void;
-  onDragStart: (event: DragEvent, task: PersonalTask) => void;
+  onDragStart: (event: DragEvent) => void;
   onDragEnd: () => void;
 }) {
   const completed = task.status === "COMPLETED";
@@ -484,7 +515,7 @@ function PersonalRow({
   return (
     <div
       draggable={!completed}
-      onDragStart={(event) => onDragStart(event, task)}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
         "flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 transition-opacity duration-150",
@@ -527,7 +558,21 @@ function PersonalRow({
   );
 }
 
-function OrgRow({ task, overdue, userId }: { task: CalendarOrgTask; overdue: boolean; userId: string }) {
+function OrgRow({
+  task,
+  overdue,
+  userId,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  task: OrgTask;
+  overdue: boolean;
+  userId: string;
+  isDragging: boolean;
+  onDragStart: (event: DragEvent) => void;
+  onDragEnd: () => void;
+}) {
   const status = ORG_STATUS[task.status];
   const completed = task.status === "COMPLETED";
   const OwnerIcon = completed ? CircleCheck : UserRound;
@@ -535,7 +580,15 @@ function OrgRow({ task, overdue, userId }: { task: CalendarOrgTask; overdue: boo
   return (
     <Link
       href={`/organizaciones/${task.organization.slug}`}
-      className="flex items-start gap-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 transition-colors duration-150 hover:border-sky-500/40 focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none"
+      // Links drag their URL by default; only tasks I may reschedule start a drag.
+      draggable={task.canReschedule}
+      onDragStart={task.canReschedule ? onDragStart : undefined}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "flex items-start gap-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 transition-[border-color,opacity] duration-150 hover:border-sky-500/40 focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none",
+        task.canReschedule && "lg:cursor-grab lg:active:cursor-grabbing",
+        isDragging && "opacity-40",
+      )}
     >
       <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-sky-300">
         <Users size={16} aria-hidden />

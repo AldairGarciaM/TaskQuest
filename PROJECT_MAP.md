@@ -78,7 +78,7 @@ src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mí
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
-src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; arrastrar misiones pendientes (chips de la celda o filas del panel, HTML5 DnD, sm+) a otro día con UI optimista y toast con Deshacer; botón lápiz por fila abre TaskFormSheet para editar o cambiar fecha (alternativa en móvil/teclado). La celda es un div (drop target) con el botón de selección absoluto debajo y los chips encima; Motion)
+src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; arrastrar misiones pendientes y tareas de equipo con `canReschedule` (chips de la celda o filas del panel, HTML5 DnD, sm+) a otro día con UI optimista y toast con Deshacer; botón lápiz por fila abre TaskFormSheet para editar o cambiar fecha (alternativa en móvil/teclado). La celda es un div (drop target) con el botón de selección absoluto debajo y los chips encima; Motion)
 src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, tooltip por hover/foco, etiqueta solo en el pico, "Ver como tabla"), chart-utils (niceMax, compact, SERIES_COLORS validados)
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
@@ -194,6 +194,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `leaveOrganization(orgId)` / `deleteOrganization(orgId)` | idem | Salir (no el dueño) / eliminar (solo dueño, cascada) |
 | `createOrgTask(orgId, input)` | `src/app/actions/org-tasks.ts` | OWNER/ADMIN. `assigneeId` vacío = libre; si viene, debe ser miembro. XP según dificultad (servidor) |
 | `updateOrgTask(id, input)` | idem | OWNER/ADMIN; solo pendientes (completada → reabrir primero). Puede reasignar o liberar |
+| `rescheduleOrgTask(id, dueDate)` | `src/app/actions/org-tasks.ts` | Solo OWNER/ADMIN (canManageTasks) y tareas PENDING. En transacción cambia dueDate y notifica al asignado (ORG_TASK_RESCHEDULED con dueDate) si no es quien la movió |
 | `deleteOrgTask(id)` | idem | OWNER/ADMIN; la XP ya pagada se conserva |
 | `claimOrgTask(id)` | idem | Cualquier miembro toma una libre (update condicional: solo uno gana) → selfAssigned |
 | `releaseOrgTask(id)` | idem | Solo quien la tomó por su cuenta; las asignadas por un jefe no se sueltan |
@@ -210,7 +211,7 @@ Toda Server Action / página protegida debe llamar `requireUser()`; el proxy sol
 
 ## Base de datos
 PostgreSQL 16 local (servicio Windows `postgresql-x64-16`, puerto 5432), base `taskquest`.
-Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`, `20261029163230_password_reset`.
+Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_achievements`, `20261026200000_user_profile` (escrita a mano: renombra name→firstName y genera username desde el email), `20261027153646_organizations`, `20261027181121_org_tasks`, `20261027210000_org_task_review` (escrita a mano: convierte `status` a OrgTaskStatus con USING en vez de borrar la columna), `20261028153400_org_task_notifications`, `20261029155355_rate_limit`, `20261029163230_password_reset`, `20261030173649_org_task_rescheduled`.
 | Modelo | Campos clave | Notas |
 |---|---|---|
 | User | id (cuid), firstName, lastName, username (unique, minúsculas), email (unique), passwordHash, sessionVersion (0), xp (0), level (1) | Login con correo o usuario. sessionVersion va en el JWT; cambiarla revoca sesiones |
@@ -222,11 +223,11 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | Organization | id, name, slug (unique) | |
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
 | OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
-| Notification | id, type (NotificationType), taskTitle, xp, level?, note?, actorName?, readAt?, createdAt, userId, organizationId | Copia los datos de la tarea (sobrevive a editarla o borrarla); cascade con User y Organization; índice (userId, createdAt); máx. 50 por usuario |
+| Notification | id, type (NotificationType), taskTitle, xp, level?, note?, actorName?, dueDate? (nueva fecha si se movió), readAt?, createdAt, userId, organizationId | Copia los datos de la tarea (sobrevive a editarla o borrarla); cascade con User y Organization; índice (userId, createdAt); máx. 50 por usuario |
 | RateLimit | key (PK, p. ej. "login:account:<userId>"), count, resetAt (timestamptz) | Contadores de ventana fija; las vencidas se borran al azar (2 % de los hits). Las pruebas la truncan |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
-Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
+Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
@@ -237,7 +238,7 @@ Logros (10): first-quest, quests-10/50/100, first-epic, streak-3/7, level-5/10, 
 - 2026-10-29: Recuperar contraseña solo por correo (no por usuario) y con la misma respuesta exista o no la cuenta. Sin SMTP el enlace va a la consola del servidor, NUNCA a la UI (cualquiera podría restablecer cuentas ajenas). Enlace de 60 min y un solo uso.
 - 2026-10-29: Revocar sesiones JWT con `User.sessionVersion`: requireUser hace una consulta por petición (cacheada) para compararla. La sesión revocada pasa por `/api/session/expired` (fuera de /auth para que el proxy no la rebote a "/") que borra la cookie.
 - 2026-10-29: "Misiones" deja de ser un ancla del dashboard (`/#missions-heading`) y pasa a ser la página /misiones con la lista completa, búsqueda, filtro por dificultad y las tareas de equipo. El dashboard queda como resumen del día (nivel, diarias, próximas fechas y 5 misiones). Las acciones de tareas, tareas de equipo, organizaciones e invitaciones revalidan también "/misiones".
-- 2026-10-30: En el calendario solo se arrastran misiones personales pendientes. Las de equipo siguen de solo lectura (su fecha la gestiona el tablero) y las completadas no se mueven. Se usa DnD nativo de HTML5, sin librería; en touch no funciona, así que el lápiz de cada fila abre el formulario de edición.
+- 2026-10-30: En el calendario solo se arrastran misiones personales pendientes. (Actualizado: dueños y admins también mueven las tareas de equipo pendientes de sus organizaciones; los miembros no, ni siquiera las suyas, y las que están en revisión o completadas no se mueven) y las completadas no se mueven. Se usa DnD nativo de HTML5, sin librería; en touch no funciona, así que el lápiz de cada fila abre el formulario de edición.
 - 2026-10-30: `requireUser` toma nombre, usuario y correo de la base (`currentAccount` en session-version.ts, la misma consulta que ya validaba sessionVersion), no del JWT: así los cambios de perfil se ven sin volver a iniciar sesión. El JWT conserva los valores del login, pero nada del servidor los lee.
 - 2026-10-30: El cambio de correo se aplica sin confirmación por correo (pedido del usuario); solo hay un diálogo "¿Guardar los cambios?".
 - 2026-10-29: Cambiar contraseña revoca también la sesión actual (sessionVersion es una sola por usuario); el cliente vuelve a iniciar sesión al instante con la nueva para no sacar a la persona. Desde /configuracion no se enlaza a /auth/recuperar porque el proxy redirige /auth/* a "/" con sesión.
@@ -338,6 +339,7 @@ Prioridad 2 — funcionalidad
 - [ ] Historial: subidas de nivel y tareas reabiertas (hoy no se registran como eventos).
 - [ ] Estadísticas de equipo para dueños/admins.
 - [x] Calendario: arrastrar misiones personales para cambiar la fecha.
+- [x] Calendario: dueños/admins arrastran tareas de equipo pendientes; el asignado recibe aviso.
 - [ ] Calendario: vista semanal; arrastre táctil (hoy en móvil se usa el lápiz → formulario).
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
@@ -355,6 +357,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-10-30: Rama `feat/calendar-drag-org` (sobre `feat/calendar-drag`): dueños/admins arrastran tareas de equipo en el calendario, notificación ORG_TASK_RESCHEDULED al asignado, migración `org_task_rescheduled`. 255 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/calendar-drag` (sobre `feat/edit-profile`): arrastrar misiones a otro día en el calendario, Deshacer, editar desde el panel del día. 248 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/edit-profile` (sobre `feat/missions-page`): editar nombre, apellidos, usuario y correo en /configuracion con confirmación; requireUser lee el perfil de la base. 243 pruebas pasan, build OK.
 - 2026-10-29: Rama `feat/missions-page` (sobre `feat/mobile-layout`): página /misiones, dashboard con resumen de 5 misiones, búsqueda y filtro por dificultad.

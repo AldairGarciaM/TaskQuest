@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
-import { Bell, CircleCheck, MessageSquareWarning } from "lucide-react";
+import { Bell, CalendarClock, CircleCheck, MessageSquareWarning } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -42,6 +42,12 @@ function writeNotifiedUntil(userId: string, iso: string) {
     // Private mode or blocked storage: toasts may repeat on reload, nothing else breaks.
   }
 }
+
+const NOTIFICATION_ICON: Record<NotificationDTO["type"], { Icon: typeof Bell; className: string }> = {
+  ORG_TASK_APPROVED: { Icon: CircleCheck, className: "bg-emerald-500/15 text-emerald-300" },
+  ORG_TASK_CHANGES_REQUESTED: { Icon: MessageSquareWarning, className: "bg-amber-500/15 text-amber-300" },
+  ORG_TASK_RESCHEDULED: { Icon: CalendarClock, className: "bg-sky-500/15 text-sky-300" },
+};
 
 function showToast(n: NotificationDTO) {
   const { title, description } = notificationText(n);
@@ -193,9 +199,8 @@ interface NotificationRowProps {
 }
 
 function NotificationRow({ notification: n, isNew, onNavigate }: NotificationRowProps) {
-  const approved = n.type === "ORG_TASK_APPROVED";
   const { title, description } = notificationText(n);
-  const Icon = approved ? CircleCheck : MessageSquareWarning;
+  const { Icon, className } = NOTIFICATION_ICON[n.type];
 
   return (
     <li>
@@ -210,7 +215,7 @@ function NotificationRow({ notification: n, isNew, onNavigate }: NotificationRow
         <span
           className={cn(
             "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full",
-            approved ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300",
+            className,
           )}
         >
           <Icon size={16} />

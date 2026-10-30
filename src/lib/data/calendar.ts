@@ -33,7 +33,8 @@ export interface CalendarOrgTask {
 export interface CalendarMonth {
   /** Personal tasks due on a day of the visible grid. */
   tasks: (TaskDTO & { dueDate: string })[];
-  orgTasks: CalendarOrgTask[];
+  /** `canReschedule`: I manage its organization and it is still pending, so I can drag it. */
+  orgTasks: (CalendarOrgTask & { canReschedule: boolean })[];
   /** Pending personal tasks without a due date (they can't be placed on the calendar). */
   undatedPending: number;
 }
@@ -58,6 +59,7 @@ function visibleOrgTasks(userId: string): Prisma.OrgTaskWhereInput {
 
 const orgTaskSelect = {
   id: true,
+  organizationId: true,
   title: true,
   difficulty: true,
   xpReward: true,
@@ -70,7 +72,12 @@ const orgTaskSelect = {
 
 function toCalendarOrgTask(task: Prisma.OrgTaskGetPayload<{ select: typeof orgTaskSelect }>): CalendarOrgTask {
   return {
-    ...task,
+    id: task.id,
+    title: task.title,
+    difficulty: task.difficulty,
+    xpReward: task.xpReward,
+    status: task.status,
+    organization: task.organization,
     dueDate: dueDateToInput(task.dueDate!),
     assignee: task.assignee && toPerson(task.assignee),
     completedBy: task.completedBy && toPerson(task.completedBy),
@@ -81,7 +88,7 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
   const { from, to } = gridRange(ym);
   const dueDate = { gte: dueDateFromInput(from), lte: dueDateFromInput(to) };
 
-  const [tasks, orgTasks, undatedPending] = await Promise.all([
+  const [tasks, orgTasks, undatedPending, managed] = await Promise.all([
     prisma.task.findMany({
       where: { userId, dueDate },
       orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
@@ -102,7 +109,12 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
       select: orgTaskSelect,
     }),
     prisma.task.count({ where: { userId, status: "PENDING", dueDate: null } }),
+    prisma.membership.findMany({
+      where: { userId, role: { in: [...TASK_MANAGER_ROLES] } },
+      select: { organizationId: true },
+    }),
   ]);
+  const managedOrgs = new Set(managed.map((m) => m.organizationId));
 
   return {
     tasks: tasks.map((task) => ({
@@ -110,7 +122,10 @@ export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<C
       dueDate: dueDateToInput(task.dueDate!),
       completedAt: task.completedAt?.toISOString() ?? null,
     })),
-    orgTasks: orgTasks.map(toCalendarOrgTask),
+    orgTasks: orgTasks.map((task) => ({
+      ...toCalendarOrgTask(task),
+      canReschedule: task.status === "PENDING" && managedOrgs.has(task.organizationId),
+    })),
     undatedPending,
   };
 }

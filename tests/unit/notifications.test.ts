@@ -27,6 +27,15 @@ describe("notificationText", () => {
   });
 });
 
+describe("notificationText for rescheduled tasks", () => {
+  it("says who moved it and to which day", () => {
+    expect(notificationText({ ...base, type: "ORG_TASK_RESCHEDULED", dueDate: "2026-11-05" })).toEqual({
+      title: "Cambió la fecha de una tarea",
+      description: "Lucía movió “Revisar portada” al jueves, 5 de noviembre.",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-10-28T12:00:00Z");
   it.each([
