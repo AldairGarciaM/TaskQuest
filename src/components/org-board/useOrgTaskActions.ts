@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { approveOrgTask, claimOrgTask, rejectOrgTask, releaseOrgTask, submitOrgTask } from "@/app/actions/org-tasks";
@@ -13,6 +13,8 @@ import { ACHIEVEMENTS_BY_KEY } from "@/lib/gamification/achievements";
  */
 export function useOrgTaskActions() {
   const [pending, startTransition] = useTransition();
+  const [choosing, setChoosing] = useState<OrgTaskDTO | null>(null);
+  const [chooseOpen, setChooseOpen] = useState(false);
 
   function run(action: () => Promise<{ ok: boolean; error?: string }>, success: () => void) {
     startTransition(async () => {
@@ -33,16 +35,25 @@ export function useOrgTaskActions() {
     run(() => releaseOrgTask(task.id), () => toast("Tarea liberada", { description: task.title }));
   }
 
-  function submit(task: OrgTaskDTO) {
+  /** Hands the task in; when the server needs a reviewer (task taken from the pool), asks for one first. */
+  function submit(task: OrgTaskDTO, reviewerId?: string) {
     startTransition(async () => {
-      const result = await submitOrgTask(task.id);
+      const result = await submitOrgTask(task.id, reviewerId);
       if (!result.ok) {
+        if (result.needsReviewer) {
+          // On the first try the dialog is the answer; a toast only when the chosen person can't review.
+          if (reviewerId) toast.error(result.error ?? "Elige a otra persona.");
+          setChoosing(task);
+          setChooseOpen(true);
+          return;
+        }
         toast.error(result.error ?? "No pudimos entregar la tarea.");
         return;
       }
+      setChooseOpen(false);
       if (result.status === "IN_REVIEW") {
-        toast.success("Enviada a revisión", {
-          description: `Recibirás ${task.xpReward} XP cuando un admin apruebe “${task.title}”.`,
+        toast.success(`Enviada a ${result.reviewerName}`, {
+          description: `Recibirás ${task.xpReward} XP cuando apruebe “${task.title}”.`,
         });
         return;
       }
@@ -79,5 +90,14 @@ export function useOrgTaskActions() {
     );
   }
 
-  return { pending, run, claim, release, submit, approve, reject };
+  /** Spread onto <ChooseReviewerDialog> wherever this hook is used. */
+  const reviewerDialog = {
+    open: chooseOpen,
+    task: choosing,
+    pending,
+    onCancel: () => setChooseOpen(false),
+    onConfirm: (reviewerId: string) => choosing && submit(choosing, reviewerId),
+  };
+
+  return { pending, run, claim, release, submit, approve, reject, reviewerDialog };
 }

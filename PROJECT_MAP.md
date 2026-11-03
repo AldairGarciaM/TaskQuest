@@ -52,7 +52,7 @@ src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  dos columnas en lg 
 src/app/actions/account.ts  changePassword, updateProfile
 src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login), EditProfileForm (nombre, apellidos, usuario, correo; valida en cliente, avisa si no hay cambios y pide confirmación con ConfirmDialog tone="primary")
 src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
-src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
+src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, getTaskReviewers, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization, regenerateJoinCode, disableJoinCode, joinOrganizationByCode
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
@@ -74,7 +74,7 @@ src/components/layout/      DashboardLayout (props userName, userId, notificatio
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
-                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking (ranking del mes con flechas ?mes=, sin meses futuros), RejectTaskDialog (nota opcional), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; tablero y dashboard)
+                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking (ranking del mes con flechas ?mes=, sin meses futuros), RejectTaskDialog (nota opcional), ChooseReviewerDialog (elegir dueño/admin que revisa una tarea tomada de la bolsa), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; si el servidor responde needsReviewer abre ChooseReviewerDialog; devuelve `reviewerDialog` para esparcirlo en el diálogo; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
@@ -201,7 +201,8 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `deleteOrgTask(id)` | idem | OWNER/ADMIN; la XP ya pagada se conserva |
 | `claimOrgTask(id)` | idem | Cualquier miembro toma una libre (update condicional: solo uno gana) → selfAssigned |
 | `releaseOrgTask(id)` | idem | Solo quien la tomó por su cuenta; las asignadas por un jefe no se sueltan |
-| `submitOrgTask(id)` | idem | Solo el responsable. MEMBER → IN_REVIEW (sin XP). OWNER/ADMIN con tarea propia → COMPLETED y cobra al instante |
+| `submitOrgTask(id, reviewerId?)` | idem | Solo el responsable. MEMBER → IN_REVIEW (sin XP) con `requestedReviewerId` = quien la asignó (si sigue siendo dueño/admin; ignora reviewerId) o el dueño/admin elegido; sin revisor válido → `{ ok:false, needsReviewer:true }`. Notifica ORG_TASK_SUBMITTED al revisor. OWNER/ADMIN con tarea propia → COMPLETED y cobra al instante |
+| `getTaskReviewers(taskId)` | idem | Miembros de la org de la tarea: dueños y admins (sin el que pregunta), dueño primero |
 | `approveOrgTask(id)` | idem | OWNER/ADMIN. IN_REVIEW → COMPLETED; paga xpReward una vez (update condicional) al responsable (completedById), reviewedById = quien aprueba, desbloquea logros del responsable y le crea una notificación (XP y nivel nuevo) en la misma transacción |
 | `rejectOrgTask(id, note?)` | idem | OWNER/ADMIN. IN_REVIEW → PENDING con el mismo responsable y `reviewNote` (≤300, opcional). Sin XP. Notifica al responsable con la nota |
 | `reopenOrgTask(id)` | idem | OWNER/ADMIN. Vuelve a pendiente con el mismo responsable, limpia revisión y descuenta awardedXp a quien la completó |
@@ -225,12 +226,12 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 
 | Organization | id, name, slug (unique), joinCode? (unique, sin guion; null = desactivado) | |
 | Membership | id, role (OrgRole), organizationId, userId | Único (organizationId, userId); un solo OWNER (el creador) |
-| OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
+| OrgTask | id, title, description?, difficulty, xpReward, status (OrgTaskStatus: PENDING/IN_REVIEW/COMPLETED), dueDate?, selfAssigned, submittedAt?, reviewNote?, completedAt?, awardedXp, reviewedById?, assignedById? (gerente que asignó; null si libre o tomada de la bolsa), requestedReviewerId? (a quién se envió a revisión; se limpia al devolver/reabrir), organizationId, assigneeId?, createdById?, completedById? | assigneeId null = libre. Índices (organizationId, status), (assigneeId) |
 | Notification | id, type (NotificationType), taskTitle, xp, level?, note?, actorName?, dueDate? (nueva fecha si se movió), readAt?, createdAt, userId, organizationId | Copia los datos de la tarea (sobrevive a editarla o borrarla); cascade con User y Organization; índice (userId, createdAt); máx. 50 por usuario |
 | RateLimit | key (PK, p. ej. "login:account:<userId>"), count, resetAt (timestamptz) | Contadores de ventana fija; las vencidas se borran al azar (2 % de los hits). Las pruebas la truncan |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
-Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
+Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED/ORG_TASK_SUBMITTED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
@@ -293,6 +294,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Revisión dirigida (decisión del usuario): una tarea asignada por un dueño/admin se envía a revisión a esa persona y solo ella recibe el aviso; si ya no es dueño/admin (o salió), el miembro elige. Las tomadas de la bolsa piden elegir dueño/admin al entregar. Cualquier dueño/admin puede seguir aprobando o devolviendo (por si el revisor no está); la tarjeta muestra "Revisa X" / "Te toca revisar". El backfill asigna assignedById = createdById en tareas asignadas existentes.
 - 2026-11-03: Ranking mensual (decisión del usuario): cuenta tareas aprobadas (completedAt) dentro del mes en hora de Ciudad de México. Reemplaza al histórico. Se puede ver meses anteriores con `?mes=`; los futuros redirigen al actual. Reabrir una tarea la quita del mes en que se aprobó.
 
 - 2026-10-27: Dashboard separa "Misiones personales" y "Tareas de organizaciones". La sección de equipo solo muestra pendientes mías o libres (no las de otros ni completadas) y solo permite Tomar/Soltar/Completar; gestionar (crear, editar, reabrir, eliminar) se hace en el tablero. Las acciones de organizaciones, tareas de equipo e invitaciones también revalidan "/".
@@ -317,6 +319,7 @@ En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Ranking mensual con navegación entre meses.
 - [ ] Ranking: mostrar al ganador del mes anterior o un histórico total (opcional).
 - [x] Avisar al miembro cuando su tarea se aprueba o se devuelve (campana + toast).
+- [x] Avisar al dueño/admin cuando le envían una tarea a revisión (el que la asignó o el elegido).
 - [ ] Notificaciones en tiempo real (hoy sondeo cada 30 s) y otros tipos (asignación, invitación).
 - [ ] Decidir si las tareas de organización cuentan para misiones diarias y racha.
 
@@ -365,6 +368,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/org-task-reviewer` (sobre `feat/org-ranking-monthly`): aviso al gerente que asignó la tarea cuando se envía a revisión; elegir revisor en tareas libres; migración `org_task_reviewer` (assignedById, requestedReviewerId, ORG_TASK_SUBMITTED). 278 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/org-ranking-monthly` (sobre `main`): ranking de la organización por mes con flechas, `startOfDayInZone` y `monthBounds`. 274 pruebas pasan, build OK.
 - 2026-11-03: `feat/change-password`, `feat/mobile-layout`, `feat/missions-page`, `feat/edit-profile`, `feat/calendar-drag`, `feat/calendar-drag-org`, `feat/org-join-code` y `feat/dashboard-task-summary` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó el 2026-10-30.
 - 2026-10-30: Rama `feat/dashboard-task-summary` (sobre `feat/org-join-code`): el dashboard muestra un "Resumen de tareas" en dos columnas (En curso | Completadas) con personales y de equipo; TaskList pierde el modo preview; OrgTaskCard acepta `organization` para mostrar su nombre. 270 pruebas pasan, build OK.

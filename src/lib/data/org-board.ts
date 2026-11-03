@@ -30,6 +30,8 @@ export interface OrgTaskDTO {
   selfAssigned: boolean;
   /** null = open: any member can take it. */
   assignee: BoardPerson | null;
+  /** Who the assignee asked to review it (IN_REVIEW only). */
+  requestedReviewer: BoardPerson | null;
 }
 
 export interface RankingEntry extends BoardPerson {
@@ -53,6 +55,7 @@ const taskSelect = {
   completedAt: true,
   selfAssigned: true,
   assignee: { select: personSelect },
+  requestedReviewer: { select: personSelect },
 } as const;
 
 function toPerson(user: { id: string; firstName: string; lastName: string; username: string }): BoardPerson {
@@ -75,6 +78,7 @@ function toTaskDTO(t: TaskRow): OrgTaskDTO {
     completedAt: t.completedAt?.toISOString() ?? null,
     selfAssigned: t.selfAssigned,
     assignee: t.assignee ? toPerson(t.assignee) : null,
+    requestedReviewer: t.status === "IN_REVIEW" && t.requestedReviewer ? toPerson(t.requestedReviewer) : null,
   };
 }
 

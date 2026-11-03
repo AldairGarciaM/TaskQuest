@@ -72,7 +72,15 @@ async function removeMembership(organizationId: string, userId: string) {
     prisma.orgTask.updateMany({
       // Work waiting for review goes back to the pool too: nobody is left to pay.
       where: { organizationId, assigneeId: userId, status: { in: ["PENDING", "IN_REVIEW"] } },
-      data: { assigneeId: null, selfAssigned: false, status: "PENDING", submittedAt: null, reviewNote: null },
+      data: {
+        assigneeId: null,
+        selfAssigned: false,
+        assignedById: null,
+        requestedReviewerId: null,
+        status: "PENDING",
+        submittedAt: null,
+        reviewNote: null,
+      },
     }),
     prisma.membership.deleteMany({ where: { organizationId, userId } }),
   ]);

@@ -36,6 +36,15 @@ describe("notificationText for rescheduled tasks", () => {
   });
 });
 
+describe("notificationText for submitted tasks", () => {
+  it("tells the reviewer who sent it", () => {
+    expect(notificationText({ ...base, type: "ORG_TASK_SUBMITTED" })).toEqual({
+      title: "Tarea para revisar",
+      description: "Lucía envió “Revisar portada” y te pidió que la revises.",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-10-28T12:00:00Z");
   it.each([

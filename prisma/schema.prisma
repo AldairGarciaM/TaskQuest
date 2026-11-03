@@ -65,6 +65,8 @@ model User {
   createdOrgTasks   OrgTask[]      @relation("OrgTaskCreator")
   completedOrgTasks OrgTask[]      @relation("OrgTaskCompleter")
   reviewedOrgTasks  OrgTask[]      @relation("OrgTaskReviewer")
+  assignedByMe      OrgTask[]      @relation("OrgTaskAssigner")
+  reviewRequests    OrgTask[]      @relation("OrgTaskRequestedReviewer")
   notifications     Notification[]
 }
 
@@ -199,6 +201,13 @@ model OrgTask {
   completedBy    User?        @relation("OrgTaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
   reviewedById   String?
   reviewedBy     User?        @relation("OrgTaskReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  /// The manager who assigned it to the current assignee (null when open or taken from the pool).
+  /// Work on it goes to their review.
+  assignedById   String?
+  assignedBy     User?        @relation("OrgTaskAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  /// Who the assignee asked to review it (IN_REVIEW only): the assigner, or a manager they chose.
+  requestedReviewerId String?
+  requestedReviewer   User?   @relation("OrgTaskRequestedReviewer", fields: [requestedReviewerId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
   @@index([assigneeId])
@@ -208,6 +217,7 @@ enum NotificationType {
   ORG_TASK_APPROVED
   ORG_TASK_CHANGES_REQUESTED
   ORG_TASK_RESCHEDULED
+  ORG_TASK_SUBMITTED
 }
 
 /// Something that happened to the user's work while they weren't looking (e.g. a manager reviewed it).
@@ -222,7 +232,7 @@ model Notification {
   level     Int?
   /// The reviewer's comments when they asked for changes.
   note      String?
-  /// First name of whoever reviewed or rescheduled it, as it was at the time.
+  /// First name of whoever reviewed, rescheduled or submitted it, as it was at the time.
   actorName String?
   /// The new due date when a manager moved the task (calendar date at 00:00 UTC).
   dueDate   DateTime?

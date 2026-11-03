@@ -59,8 +59,9 @@ describe("review notifications", () => {
       }),
     ]);
 
+    // The owner only got the request to review it, not the approval.
     signInAs(owner);
-    expect((await fetchNotifications()).items).toHaveLength(0);
+    expect((await fetchNotifications()).items.map((n) => n.type)).toEqual(["ORG_TASK_SUBMITTED"]);
   });
 
   it("tells the member when changes were requested, with the note", async () => {

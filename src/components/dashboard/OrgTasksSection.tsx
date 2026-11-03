@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import OrgTaskCard, { type OrgTaskAction } from "@/components/org-board/OrgTaskCard";
+import ChooseReviewerDialog from "@/components/org-board/ChooseReviewerDialog";
 import RejectTaskDialog from "@/components/org-board/RejectTaskDialog";
 import { useOrgTaskActions } from "@/components/org-board/useOrgTaskActions";
 import type { MyOrgTasksGroup, OrgTaskDTO } from "@/lib/data/org-board";
@@ -37,7 +38,7 @@ interface OrgTasksSectionProps {
 
 export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionProps) {
   const reduceMotion = useReducedMotion();
-  const { pending, claim, release, submit, approve, reject } = useOrgTaskActions();
+  const { pending, claim, release, submit, approve, reject, reviewerDialog } = useOrgTaskActions();
   const [filter, setFilter] = useState<Filter>("mine");
   const [rejecting, setRejecting] = useState<OrgTaskDTO | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -163,6 +164,7 @@ export default function OrgTasksSection({ groups, myUserId }: OrgTasksSectionPro
         onCancel={() => setRejectOpen(false)}
         onConfirm={(note) => rejecting && reject(rejecting, note, () => setRejectOpen(false))}
       />
+      <ChooseReviewerDialog {...reviewerDialog} />
     </section>
   );
 }

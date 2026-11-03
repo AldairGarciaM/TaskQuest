@@ -19,7 +19,13 @@ import {
 } from "@/lib/validations/task";
 import { XP_BY_DIFFICULTY } from "@/lib/xp";
 
-type Failure = { ok: false; error?: string; fieldErrors?: OrgTaskFieldErrors };
+type Failure = {
+  ok: false;
+  error?: string;
+  fieldErrors?: OrgTaskFieldErrors;
+  /** The member must pick who reviews the task (taken from the pool, or its assigner can't review anymore). */
+  needsReviewer?: true;
+};
 type Result<T = object> = ({ ok: true } & T) | Failure;
 
 const NOT_FOUND: Failure = { ok: false, error: "No encontramos esa tarea." };
@@ -56,12 +62,22 @@ async function taskForMember(taskId: unknown, userId: string) {
       status: true,
       assigneeId: true,
       selfAssigned: true,
+      assignedById: true,
       difficulty: true,
     },
   });
   if (!task) return null;
   const role = await roleIn(task.organizationId, userId);
   return role ? { task, role } : null;
+}
+
+/** The user, if they're an owner or admin of the organization: the people who review tasks. */
+async function reviewerIn(organizationId: string, userId: string) {
+  const membership = await prisma.membership.findUnique({
+    where: { organizationId_userId: { organizationId, userId } },
+    select: { role: true, user: { select: { id: true, firstName: true } } },
+  });
+  return membership && canManageTasks(membership.role) ? membership.user : null;
 }
 
 function invalidInput(error: z.ZodError): Failure {
@@ -92,6 +108,7 @@ export async function createOrgTask(organizationId: unknown, input: unknown): Pr
         xpReward: XP_BY_DIFFICULTY[difficulty],
         dueDate: dueDate ? dueDateFromInput(dueDate) : null,
         assigneeId: assigneeId ?? null,
+        assignedById: assigneeId ? user.id : null,
         createdById: user.id,
       },
     });
@@ -120,6 +137,7 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
   }
 
   const nextAssignee = assigneeId ?? null;
+  const sameAssignee = nextAssignee === found.task.assigneeId;
   const { count } = await prisma.orgTask.updateMany({
     where: { id: found.task.id, status: "PENDING" },
     data: {
@@ -129,8 +147,9 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
       xpReward: XP_BY_DIFFICULTY[difficulty],
       dueDate: dueDate ? dueDateFromInput(dueDate) : null,
       assigneeId: nextAssignee,
-      // Same person keeps how they got it; a new assignee was chosen by the manager.
-      selfAssigned: nextAssignee !== null && nextAssignee === found.task.assigneeId && found.task.selfAssigned,
+      // Same person keeps how they got it; a new assignee was chosen by this manager.
+      selfAssigned: nextAssignee !== null && sameAssignee && found.task.selfAssigned,
+      ...(sameAssignee ? {} : { assignedById: nextAssignee ? user.id : null }),
     },
   });
   if (count === 0) return { ok: false, error: "Solo se pueden editar tareas pendientes." };
@@ -207,7 +226,7 @@ export async function claimOrgTask(taskId: unknown): Promise<Result> {
   const { count } = await prisma.orgTask.updateMany({
     where: { id: found.task.id, status: "PENDING", assigneeId: null },
     // A note left for a previous assignee isn't meant for the new one.
-    data: { assigneeId: user.id, selfAssigned: true, reviewNote: null },
+    data: { assigneeId: user.id, selfAssigned: true, assignedById: null, reviewNote: null },
   });
   if (count === 0) return { ok: false, error: "Alguien más ya tomó esta tarea." };
 
@@ -223,7 +242,7 @@ export async function releaseOrgTask(taskId: unknown): Promise<Result> {
 
   const { count } = await prisma.orgTask.updateMany({
     where: { id: found.task.id, status: "PENDING", assigneeId: user.id, selfAssigned: true },
-    data: { assigneeId: null, selfAssigned: false, reviewNote: null },
+    data: { assigneeId: null, selfAssigned: false, assignedById: null, reviewNote: null },
   });
   if (count === 0) return { ok: false, error: "Solo puedes soltar tareas que tomaste tú." };
 
@@ -269,17 +288,46 @@ async function payCompletion(
   return { xpDelta: task.xpReward, achievements, level, leveledUp };
 }
 
-export type SubmitOutcome = { status: "IN_REVIEW" } | ({ status: "COMPLETED" } & OrgCompletionOutcome);
+export type SubmitOutcome =
+  | { status: "IN_REVIEW"; reviewerName: string }
+  | ({ status: "COMPLETED" } & OrgCompletionOutcome);
+
+export interface ReviewerOption {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  role: "OWNER" | "ADMIN";
+}
+
+/** Owners and admins the caller can send this task to for review, owner first. */
+export async function getTaskReviewers(taskId: unknown): Promise<Result<{ reviewers: ReviewerOption[] }>> {
+  const user = await requireUser();
+  const found = await taskForMember(taskId, user.id);
+  if (!found) return NOT_FOUND;
+
+  const rows = await prisma.membership.findMany({
+    where: { organizationId: found.task.organizationId, role: { in: ["OWNER", "ADMIN"] }, userId: { not: user.id } },
+    select: { role: true, user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  const reviewers = rows
+    .filter((m): m is typeof m & { role: ReviewerOption["role"] } => canManageTasks(m.role))
+    .map((m) => ({ userId: m.user.id, firstName: m.user.firstName, lastName: m.user.lastName, role: m.role }))
+    .sort((a, b) => (a.role === b.role ? a.firstName.localeCompare(b.firstName, "es") : a.role === "OWNER" ? -1 : 1));
+  return { ok: true, reviewers };
+}
 
 /**
- * The assignee finishes the task. A member's work goes to review first; owners and admins are the
- * reviewers, so their own tasks complete (and pay) right away.
+ * The assignee finishes the task. Owners and admins are the reviewers, so their own tasks complete
+ * (and pay) right away. A member's work goes to review: to the manager who assigned it while they can
+ * still review, otherwise (e.g. a task taken from the pool) to the owner or admin they choose
+ * (`reviewerId`). That reviewer is notified.
  */
-export async function submitOrgTask(taskId: unknown): Promise<Result<SubmitOutcome>> {
+export async function submitOrgTask(taskId: unknown, reviewerId?: unknown): Promise<Result<SubmitOutcome>> {
   const user = await requireUser();
   const found = await taskForMember(taskId, user.id);
   if (!found) return NOT_FOUND;
   if (found.task.assigneeId !== user.id) return { ok: false, error: "Solo quien tiene la tarea puede entregarla." };
+  const { organizationId } = found.task;
 
   try {
     if (canManageTasks(found.role)) {
@@ -289,18 +337,46 @@ export async function submitOrgTask(taskId: unknown): Promise<Result<SubmitOutco
       return { ok: true, status: "COMPLETED", ...outcome };
     }
 
-    const { count } = await prisma.orgTask.updateMany({
-      where: { id: found.task.id, status: "PENDING", assigneeId: user.id },
-      data: { status: "IN_REVIEW", submittedAt: new Date(), reviewNote: null },
+    const assigner =
+      !found.task.selfAssigned && found.task.assignedById
+        ? await reviewerIn(organizationId, found.task.assignedById)
+        : null;
+    let reviewer = assigner;
+    if (!reviewer) {
+      if (reviewerId === undefined || reviewerId === null) {
+        return { ok: false, needsReviewer: true, error: "Elige quién revisará la tarea." };
+      }
+      const chosen = taskIdSchema.safeParse(reviewerId);
+      reviewer = chosen.success ? await reviewerIn(organizationId, chosen.data) : null;
+      if (!reviewer) {
+        return { ok: false, needsReviewer: true, error: "Esa persona ya no puede revisar tareas aquí. Elige a otra." };
+      }
+    }
+    const { id: requestedReviewerId, firstName: reviewerName } = reviewer;
+
+    const submitted = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.orgTask.updateMany({
+        where: { id: found.task.id, status: "PENDING", assigneeId: user.id },
+        data: { status: "IN_REVIEW", submittedAt: new Date(), reviewNote: null, requestedReviewerId },
+      });
+      if (count === 0) return false;
+      await notifyReview(tx, {
+        type: "ORG_TASK_SUBMITTED",
+        userId: requestedReviewerId,
+        organizationId,
+        taskTitle: found.task.title,
+        actorName: user.firstName,
+      });
+      return true;
     });
-    if (count === 0) return { ok: false, error: "Esta tarea ya no está pendiente." };
+    if (!submitted) return { ok: false, error: "Esta tarea ya no está pendiente." };
+
+    revalidateBoard();
+    return { ok: true, status: "IN_REVIEW", reviewerName };
   } catch (error) {
     console.error("submitOrgTask failed", error);
     return GENERIC_ERROR;
   }
-
-  revalidateBoard();
-  return { ok: true, status: "IN_REVIEW" };
 }
 
 /** A manager accepts the work: the task completes and its XP goes to the member who did it. */
@@ -353,7 +429,7 @@ export async function rejectOrgTask(taskId: unknown, note?: unknown): Promise<Re
     const sentBack = await prisma.$transaction(async (tx) => {
       const { count } = await tx.orgTask.updateMany({
         where: { id: found.task.id, status: "IN_REVIEW" },
-        data: { status: "PENDING", submittedAt: null, reviewNote, reviewedById: user.id },
+        data: { status: "PENDING", submittedAt: null, reviewNote, reviewedById: user.id, requestedReviewerId: null },
       });
       if (count === 0) return false;
       if (assigneeId) {
@@ -401,6 +477,7 @@ export async function reopenOrgTask(taskId: unknown): Promise<Result> {
           completedById: null,
           submittedAt: null,
           reviewedById: null,
+          requestedReviewerId: null,
           awardedXp: 0,
         },
       });

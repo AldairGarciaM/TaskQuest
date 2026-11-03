@@ -7,6 +7,7 @@ import { useOptimistic, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { deleteTask } from "@/app/actions/tasks";
+import ChooseReviewerDialog from "@/components/org-board/ChooseReviewerDialog";
 import OrgTaskCard, { type OrgTaskAction } from "@/components/org-board/OrgTaskCard";
 import { useOrgTaskActions } from "@/components/org-board/useOrgTaskActions";
 import { toggleTaskWithToasts } from "@/components/task/completion";
@@ -173,6 +174,7 @@ export default function TaskSummary({ personal, org, myUserId }: TaskSummaryProp
 
       <TaskFormSheet open={formOpen} onOpenChange={setFormOpen} task={editing} formKey={formKey} />
       <DeleteTaskDialog open={deleteOpen} task={deleteTarget} onCancel={() => setDeleteOpen(false)} onConfirm={remove} />
+      <ChooseReviewerDialog {...orgActions.reviewerDialog} />
     </section>
   );
 }

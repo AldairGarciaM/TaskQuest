@@ -5,6 +5,7 @@ import {
   claimOrgTask,
   createOrgTask,
   deleteOrgTask,
+  getTaskReviewers,
   rejectOrgTask,
   releaseOrgTask,
   reopenOrgTask,
@@ -154,7 +155,7 @@ describe("review flow", () => {
     const task = await newTask(organization.id, { assigneeId: member.id });
 
     signInAs(member);
-    expect(await submitOrgTask(task.id)).toEqual({ ok: true, status: "IN_REVIEW" });
+    expect(await submitOrgTask(task.id)).toEqual({ ok: true, status: "IN_REVIEW", reviewerName: owner.firstName });
     expect(await taskRow(task.id)).toMatchObject({ status: "IN_REVIEW", awardedXp: 0, submittedAt: expect.any(Date) });
     expect(await userXp(member.id)).toEqual({ xp: 80, level: 1 });
     expect((await submitOrgTask(task.id)).ok).toBe(false);
@@ -282,12 +283,96 @@ describe("review flow", () => {
     const task = await newTask(organization.id);
     signInAs(member);
     await claimOrgTask(task.id);
-    await submitOrgTask(task.id);
+    expect((await submitOrgTask(task.id, owner.id)).ok).toBe(true);
 
     expect((await releaseOrgTask(task.id)).ok).toBe(false);
     signInAs(owner);
     expect(await updateOrgTask(task.id, { title: "Otra", difficulty: "EASY" })).toMatchObject({ ok: false });
     expect(await taskRow(task.id)).toMatchObject({ status: "IN_REVIEW", assigneeId: member.id, title: "Revisar portada" });
+  });
+});
+
+describe("who reviews a submitted task", () => {
+  const submittedNotices = (userId: string) =>
+    prisma.notification.findMany({ where: { userId, type: "ORG_TASK_SUBMITTED" } });
+
+  it("sends a task an admin assigned to that admin and notifies only them", async () => {
+    const { owner, admin, member, organization } = await setup();
+    signInAs(admin);
+    const task = await newTask(organization.id, { assigneeId: member.id });
+    expect(task.assignedById).toBe(admin.id);
+
+    signInAs(member);
+    // A reviewer picked by the member doesn't override the one who assigned it.
+    expect(await submitOrgTask(task.id, owner.id)).toEqual({ ok: true, status: "IN_REVIEW", reviewerName: admin.firstName });
+    expect((await taskRow(task.id)).requestedReviewerId).toBe(admin.id);
+    expect(await submittedNotices(admin.id)).toMatchObject([
+      { taskTitle: "Revisar portada", actorName: member.firstName, organizationId: organization.id },
+    ]);
+    expect(await submittedNotices(owner.id)).toEqual([]);
+
+    const detail = await getOrganizationForMember(organization.slug, owner.id);
+    const { tasks } = await getOrgBoard(organization.id, detail!.members, parseMonthParam(undefined));
+    expect(tasks[0].requestedReviewer?.userId).toBe(admin.id);
+  });
+
+  it("asks the member to choose a reviewer for a task taken from the pool", async () => {
+    const { owner, admin, member, other, organization } = await setup();
+    const task = await newTask(organization.id);
+    signInAs(member);
+    await claimOrgTask(task.id);
+
+    const options = await getTaskReviewers(task.id);
+    expect(options.ok && options.reviewers.map((r) => [r.userId, r.role])).toEqual([
+      [owner.id, "OWNER"],
+      [admin.id, "ADMIN"],
+    ]);
+
+    expect(await submitOrgTask(task.id)).toMatchObject({ ok: false, needsReviewer: true });
+    expect(await submitOrgTask(task.id, other.id)).toMatchObject({ ok: false, needsReviewer: true });
+    expect(await submitOrgTask(task.id, "not-an-id!")).toMatchObject({ ok: false, needsReviewer: true });
+    expect((await taskRow(task.id)).status).toBe("PENDING");
+
+    expect(await submitOrgTask(task.id, admin.id)).toMatchObject({ ok: true, status: "IN_REVIEW", reviewerName: admin.firstName });
+    expect(await submittedNotices(admin.id)).toHaveLength(1);
+    expect(await submittedNotices(owner.id)).toEqual([]);
+
+    // Sent back: the next submission asks again.
+    signInAs(owner);
+    expect((await rejectOrgTask(task.id, "Falta el enlace")).ok).toBe(true);
+    expect((await taskRow(task.id)).requestedReviewerId).toBeNull();
+    signInAs(member);
+    expect(await submitOrgTask(task.id)).toMatchObject({ ok: false, needsReviewer: true });
+  });
+
+  it("asks for a reviewer when the assigner can no longer review", async () => {
+    const { admin, member, organization } = await setup();
+    signInAs(admin);
+    const task = await newTask(organization.id, { assigneeId: member.id });
+    await prisma.membership.update({
+      where: { organizationId_userId: { organizationId: organization.id, userId: admin.id } },
+      data: { role: "MEMBER" },
+    });
+
+    signInAs(member);
+    expect(await submitOrgTask(task.id)).toMatchObject({ ok: false, needsReviewer: true });
+  });
+
+  it("records the manager who reassigns a task, and forgets them when it's released to the pool", async () => {
+    const { owner, admin, member, other, organization } = await setup();
+    const task = await newTask(organization.id, { assigneeId: member.id });
+    expect(task.assignedById).toBe(owner.id);
+
+    signInAs(admin);
+    expect((await updateOrgTask(task.id, { title: "Otra", difficulty: "EASY", assigneeId: other.id })).ok).toBe(true);
+    expect((await taskRow(task.id)).assignedById).toBe(admin.id);
+    // Editing without changing the assignee keeps who assigned it.
+    signInAs(owner);
+    expect((await updateOrgTask(task.id, { title: "Otra más", difficulty: "EASY", assigneeId: other.id })).ok).toBe(true);
+    expect((await taskRow(task.id)).assignedById).toBe(admin.id);
+
+    expect((await updateOrgTask(task.id, { title: "Libre", difficulty: "EASY" })).ok).toBe(true);
+    expect((await taskRow(task.id)).assignedById).toBeNull();
   });
 });
 

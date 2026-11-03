@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import OrgTaskCard, { type OrgTaskAction } from "./OrgTaskCard";
 import OrgTaskFormSheet from "./OrgTaskFormSheet";
+import ChooseReviewerDialog from "./ChooseReviewerDialog";
 import RejectTaskDialog from "./RejectTaskDialog";
 import { useOrgTaskActions } from "./useOrgTaskActions";
 
@@ -37,7 +38,7 @@ interface OrgBoardProps {
 
 export default function OrgBoard({ organizationId, myUserId, canManage, tasks, members }: OrgBoardProps) {
   const reduceMotion = useReducedMotion();
-  const { pending, run, claim, release, submit, approve, reject } = useOrgTaskActions();
+  const { pending, run, claim, release, submit, approve, reject, reviewerDialog } = useOrgTaskActions();
   const [filter, setFilter] = useState<Filter>("pending");
   const [formOpen, setFormOpen] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -200,6 +201,7 @@ export default function OrgBoard({ organizationId, myUserId, canManage, tasks, m
         onCancel={() => setRejectOpen(false)}
         onConfirm={(note) => rejecting && reject(rejecting, note, () => setRejectOpen(false))}
       />
+      <ChooseReviewerDialog {...reviewerDialog} />
 
       <ConfirmDialog
         open={confirmOpen}

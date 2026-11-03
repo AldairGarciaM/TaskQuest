@@ -23,6 +23,13 @@ export function notificationText(n: NotificationContent): { title: string; descr
     };
   }
 
+  if (n.type === "ORG_TASK_SUBMITTED") {
+    return {
+      title: "Tarea para revisar",
+      description: `${n.actorName ?? "Un miembro"} envió “${n.taskTitle}” y te pidió que la revises.`,
+    };
+  }
+
   if (n.type === "ORG_TASK_RESCHEDULED") {
     return {
       title: "Cambió la fecha de una tarea",

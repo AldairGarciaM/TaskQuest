@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
-import { Bell, CalendarClock, CircleCheck, MessageSquareWarning } from "lucide-react";
+import { Bell, CalendarClock, CircleCheck, ClipboardCheck, MessageSquareWarning } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -47,6 +47,7 @@ const NOTIFICATION_ICON: Record<NotificationDTO["type"], { Icon: typeof Bell; cl
   ORG_TASK_APPROVED: { Icon: CircleCheck, className: "bg-emerald-500/15 text-emerald-300" },
   ORG_TASK_CHANGES_REQUESTED: { Icon: MessageSquareWarning, className: "bg-amber-500/15 text-amber-300" },
   ORG_TASK_RESCHEDULED: { Icon: CalendarClock, className: "bg-sky-500/15 text-sky-300" },
+  ORG_TASK_SUBMITTED: { Icon: ClipboardCheck, className: "bg-violet-500/15 text-violet-300" },
 };
 
 function showToast(n: NotificationDTO) {
