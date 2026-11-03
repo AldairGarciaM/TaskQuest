@@ -294,7 +294,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
-- 2026-11-03: Atajos a organizaciones en el menú lateral (propuesta para usuario casual, pendiente de aprobación): lista bajo "Organizaciones" con un contador de lo que espera al usuario (sus tareas pendientes + revisiones que le pidieron). Se eligió el menú (no el dashboard ni el navbar) porque está en todas las páginas y en el menú móvil. Se calcula en cada carga del layout (2 groupBy + memberships).
+- 2026-11-03: Atajos a organizaciones en el menú lateral (propuesta para usuario casual, aprobada por el usuario): lista bajo "Organizaciones" con un contador de lo que espera al usuario (sus tareas pendientes + revisiones que le pidieron). Se eligió el menú (no el dashboard ni el navbar) porque está en todas las páginas y en el menú móvil. Se calcula en cada carga del layout (2 groupBy + memberships).
 - 2026-11-03: Vista semanal como agenda (un día por fila con todas sus tareas) en lugar de 7 columnas: las filas completas no caben en columnas de ~140 px y la agenda funciona igual en teléfono. Sin panel lateral: completar, editar, crear (+ por día) y arrastrar se hacen en la misma fila. La vista va en la URL (no se recuerda la última elegida).
 - 2026-11-03: Revisión dirigida (decisión del usuario): una tarea asignada por un dueño/admin se envía a revisión a esa persona y solo ella recibe el aviso; si ya no es dueño/admin (o salió), el miembro elige. Las tomadas de la bolsa piden elegir dueño/admin al entregar. Cualquier dueño/admin puede seguir aprobando o devolviendo (por si el revisor no está); la tarjeta muestra "Revisa X" / "Te toca revisar". El backfill asigna assignedById = createdById en tareas asignadas existentes.
 - 2026-11-03: Ranking mensual (decisión del usuario): cuenta tareas aprobadas (completedAt) dentro del mes en hora de Ciudad de México. Reemplaza al histórico. Se puede ver meses anteriores con `?mes=`; los futuros redirigen al actual. Reabrir una tarea la quita del mes en que se aprobó.
@@ -371,6 +371,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: `feat/calendar-week` y `feat/sidebar-orgs` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
 - 2026-11-03: Rama `feat/sidebar-orgs` (sobre `feat/calendar-week`): atajos a mis organizaciones en el menú lateral y móvil con contador de pendientes; getSidebarOrganizations. 284 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/calendar-week` (sobre `main`): vista semanal del calendario tipo agenda, selector Mes/Semana en la URL; lógica del calendario extraída a useCalendarTasks y entries.tsx (la vista mensual se comporta igual). 283 pruebas pasan, build OK.
 - 2026-11-03: `feat/org-ranking-monthly` y `feat/org-task-reviewer` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
