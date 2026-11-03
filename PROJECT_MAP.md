@@ -368,6 +368,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: `feat/org-ranking-monthly` y `feat/org-task-reviewer` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
 - 2026-11-03: Rama `feat/org-task-reviewer` (sobre `feat/org-ranking-monthly`): aviso al gerente que asignó la tarea cuando se envía a revisión; elegir revisor en tareas libres; migración `org_task_reviewer` (assignedById, requestedReviewerId, ORG_TASK_SUBMITTED). 278 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/org-ranking-monthly` (sobre `main`): ranking de la organización por mes con flechas, `startOfDayInZone` y `monthBounds`. 274 pruebas pasan, build OK.
 - 2026-11-03: `feat/change-password`, `feat/mobile-layout`, `feat/missions-page`, `feat/edit-profile`, `feat/calendar-drag`, `feat/calendar-drag-org`, `feat/org-join-code` y `feat/dashboard-task-summary` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó el 2026-10-30.
