@@ -12,6 +12,7 @@ import {
   regenerateJoinCode,
   removeMember,
   revokeInvitation,
+  transferOwnership,
 } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
 import { MAX_OWNED_ORGANIZATIONS } from "@/lib/organizations/permissions";
@@ -494,5 +495,72 @@ describe("getSidebarOrganizations", () => {
       { id: work.id, name: "Trabajo", slug: work.slug, attention: 2 },
       { id: club.id, name: "Club", slug: club.slug, attention: 1 },
     ]);
+  });
+});
+
+describe("transferOwnership", () => {
+  it("makes the member the owner, keeps the old owner as admin and notifies the new one", async () => {
+    const owner = await createSignedInUser();
+    const organization = await newOrganization("Diseño Ágil");
+    const member = await createUser({ firstName: "Ana" });
+    await addMember(organization.id, member, "MEMBER");
+
+    expect(await transferOwnership(organization.id, member.id, "  diseño ágil ")).toEqual({ ok: true });
+    expect(await roleOf(organization.id, member.id)).toBe("OWNER");
+    expect(await roleOf(organization.id, owner.id)).toBe("ADMIN");
+    expect(await prisma.notification.findMany({ where: { userId: member.id } })).toMatchObject([
+      { type: "ORG_OWNERSHIP_TRANSFERRED", taskTitle: "Diseño Ágil", actorName: owner.firstName },
+    ]);
+
+    // The old owner is now an admin: no second transfer, and they may leave.
+    expect(await transferOwnership(organization.id, member.id, "Diseño Ágil")).toMatchObject({ ok: false });
+    expect((await leaveOrganization(organization.id)).ok).toBe(true);
+  });
+
+  it("requires the exact name, a current member and the owner's role", async () => {
+    const owner = await createSignedInUser();
+    const organization = await newOrganization("Equipo Alfa");
+    const admin = await createUser();
+    const outsider = await createUser();
+    await addMember(organization.id, admin, "ADMIN");
+
+    expect(await transferOwnership(organization.id, admin.id, "Equipo")).toMatchObject({ ok: false });
+    expect(await transferOwnership(organization.id, outsider.id, "Equipo Alfa")).toMatchObject({ ok: false });
+    expect(await transferOwnership(organization.id, owner.id, "Equipo Alfa")).toMatchObject({ ok: false });
+
+    signInAs(admin);
+    expect(await transferOwnership(organization.id, admin.id, "Equipo Alfa")).toMatchObject({ ok: false });
+    expect(await roleOf(organization.id, owner.id)).toBe("OWNER");
+    expect(await roleOf(organization.id, admin.id)).toBe("ADMIN");
+  });
+
+  it("won't push someone past the owned-organizations limit", async () => {
+    const owner = await createSignedInUser();
+    const organization = await newOrganization("Equipo Alfa");
+    const busy = await createUser();
+    await addMember(organization.id, busy, "MEMBER");
+    for (let i = 0; i < MAX_OWNED_ORGANIZATIONS; i++) {
+      const owned = await prisma.organization.create({ data: { name: `Propia ${i}`, slug: `propia-${i}-${Date.now()}` } });
+      await addMember(owned.id, busy, "OWNER");
+    }
+
+    expect(await transferOwnership(organization.id, busy.id, "Equipo Alfa")).toMatchObject({ ok: false });
+    expect(await roleOf(organization.id, owner.id)).toBe("OWNER");
+  });
+
+  it("can't run twice at once and leave two owners", async () => {
+    await createSignedInUser();
+    const organization = await newOrganization("Equipo Alfa");
+    const a = await createUser();
+    const b = await createUser();
+    await addMember(organization.id, a, "MEMBER");
+    await addMember(organization.id, b, "MEMBER");
+
+    const results = await Promise.all([
+      transferOwnership(organization.id, a.id, "Equipo Alfa"),
+      transferOwnership(organization.id, b.id, "Equipo Alfa"),
+    ]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(await prisma.membership.count({ where: { organizationId: organization.id, role: "OWNER" } })).toBe(1);
   });
 });

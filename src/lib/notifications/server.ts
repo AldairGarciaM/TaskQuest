@@ -39,7 +39,7 @@ interface ReviewNotice {
   dueDate?: Date | null;
 }
 
-/** Tells the assignee a manager reviewed or rescheduled their task. Runs inside that change's transaction. */
+/** Stores a notice for one user (task reviewed, rescheduled or submitted; ownership received). Runs inside that change's transaction. */
 export async function notifyReview(tx: Prisma.TransactionClient, notice: ReviewNotice) {
   await tx.notification.create({
     data: {

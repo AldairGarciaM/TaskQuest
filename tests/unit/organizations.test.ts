@@ -7,6 +7,7 @@ import {
   canLeave,
   canManageTasks,
   canRemoveMember,
+  canTransferOwnership,
   invitableRoles,
 } from "@/lib/organizations/permissions";
 import {
@@ -16,7 +17,7 @@ import {
   organizationSlug,
   slugify,
 } from "@/lib/organizations/tokens";
-import { invitationTokenSchema, inviteMemberSchema } from "@/lib/validations/organization";
+import { confirmsName, invitationTokenSchema, inviteMemberSchema } from "@/lib/validations/organization";
 
 describe("permissions", () => {
   it("lets owners invite admins and members, admins only members, members nobody", () => {
@@ -53,6 +54,23 @@ describe("permissions", () => {
     expect(canLeave("MEMBER")).toBe(true);
     expect(canDeleteOrganization("OWNER")).toBe(true);
     expect(canDeleteOrganization("ADMIN")).toBe(false);
+  });
+
+  it("lets only the owner transfer ownership", () => {
+    expect(canTransferOwnership("OWNER")).toBe(true);
+    expect(canTransferOwnership("ADMIN")).toBe(false);
+    expect(canTransferOwnership("MEMBER")).toBe(false);
+  });
+});
+
+describe("confirmsName", () => {
+  it("accepts the name ignoring case and surrounding spaces", () => {
+    expect(confirmsName("  diseño ágil ", "Diseño Ágil")).toBe(true);
+  });
+
+  it("rejects anything else, including a name without accents", () => {
+    expect(confirmsName("Diseno Agil", "Diseño Ágil")).toBe(false);
+    expect(confirmsName("", "Diseño Ágil")).toBe(false);
   });
 });
 

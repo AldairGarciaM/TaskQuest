@@ -45,6 +45,15 @@ describe("notificationText for submitted tasks", () => {
   });
 });
 
+describe("notificationText for ownership", () => {
+  it("tells the new owner who handed them the organization", () => {
+    expect(notificationText({ ...base, type: "ORG_OWNERSHIP_TRANSFERRED", taskTitle: "Equipo Alfa" })).toEqual({
+      title: "La organización ahora es tuya",
+      description: "Lucía te pasó la propiedad de “Equipo Alfa”.",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-10-28T12:00:00Z");
   it.each([

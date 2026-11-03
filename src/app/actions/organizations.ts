@@ -12,8 +12,10 @@ import {
   canLeave,
   canManageInvitations,
   canRemoveMember,
+  canTransferOwnership,
   MAX_OWNED_ORGANIZATIONS,
 } from "@/lib/organizations/permissions";
+import { notifyReview } from "@/lib/notifications/server";
 import { formatJoinCode } from "@/lib/organizations/join-code";
 import {
   createInvitationToken,
@@ -35,10 +37,12 @@ import {
 import { requireUser } from "@/lib/session";
 import {
   assignableRoleSchema,
+  confirmsName,
   createOrganizationSchema,
   idSchema,
   inviteMemberSchema,
   joinOrganizationSchema,
+  transferConfirmationSchema,
   type InviteFieldErrors,
   type JoinFieldErrors,
   type OrganizationFieldErrors,
@@ -245,9 +249,74 @@ export async function leaveOrganization(organizationId: unknown): Promise<Result
 
   const actor = await roleIn(orgId.data, user.id);
   if (!actor) return NOT_FOUND;
-  if (!canLeave(actor)) return { ok: false, error: "El dueño no puede salir; elimina la organización." };
+  if (!canLeave(actor)) {
+    return { ok: false, error: "El dueño no puede salir; transfiere la propiedad o elimina la organización." };
+  }
 
   await removeMembership(orgId.data, user.id);
+  revalidateOrganizations();
+  return { ok: true };
+}
+
+/**
+ * The owner makes another member the owner and becomes an admin. They confirm by typing the
+ * organization's name. The new owner is notified.
+ */
+export async function transferOwnership(
+  organizationId: unknown,
+  newOwnerId: unknown,
+  confirmation: unknown,
+): Promise<Result> {
+  const user = await requireUser();
+  const orgId = idSchema.safeParse(organizationId);
+  const targetId = idSchema.safeParse(newOwnerId);
+  if (!orgId.success || !targetId.success) return NOT_FOUND;
+  if (targetId.data === user.id) return { ok: false, error: "Elige a otra persona." };
+
+  const organization = await prisma.organization.findUnique({ where: { id: orgId.data }, select: { name: true } });
+  const [actor, target] = await Promise.all([roleIn(orgId.data, user.id), roleIn(orgId.data, targetId.data)]);
+  if (!organization || !actor) return NOT_FOUND;
+  if (!canTransferOwnership(actor)) return FORBIDDEN;
+  if (!target) return { ok: false, error: "Esa persona ya no es miembro de la organización." };
+
+  const typed = transferConfirmationSchema.safeParse(confirmation);
+  if (!typed.success || !confirmsName(typed.data, organization.name)) {
+    return { ok: false, error: "Escribe el nombre de la organización tal como aparece." };
+  }
+
+  const owned = await prisma.membership.count({ where: { userId: targetId.data, role: "OWNER" } });
+  if (owned >= MAX_OWNED_ORGANIZATIONS) {
+    return { ok: false, error: `Esa persona ya es dueña de ${MAX_OWNED_ORGANIZATIONS} organizaciones, el máximo.` };
+  }
+
+  try {
+    const transferred = await prisma.$transaction(async (tx) => {
+      // Conditional: two transfers at once (or a role change in between) can't leave two owners.
+      const demoted = await tx.membership.updateMany({
+        where: { organizationId: orgId.data, userId: user.id, role: "OWNER" },
+        data: { role: "ADMIN" },
+      });
+      if (demoted.count === 0) return false;
+      const promoted = await tx.membership.updateMany({
+        where: { organizationId: orgId.data, userId: targetId.data },
+        data: { role: "OWNER" },
+      });
+      if (promoted.count === 0) throw new Error("new owner left during the transfer");
+      await notifyReview(tx, {
+        type: "ORG_OWNERSHIP_TRANSFERRED",
+        userId: targetId.data,
+        organizationId: orgId.data,
+        taskTitle: organization.name,
+        actorName: user.firstName,
+      });
+      return true;
+    });
+    if (!transferred) return FORBIDDEN;
+  } catch (error) {
+    console.error("transferOwnership failed", error);
+    return GENERIC_ERROR;
+  }
+
   revalidateOrganizations();
   return { ok: true };
 }

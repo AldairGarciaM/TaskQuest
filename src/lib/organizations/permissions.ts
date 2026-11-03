@@ -42,7 +42,12 @@ export function canChangeRole(actor: OrgRole, target: OrgRole, next: OrgRole): b
   return actor === "OWNER" && target !== "OWNER" && next !== "OWNER" && target !== next;
 }
 
-/** The owner can't leave (they delete the organization instead). */
+/** Only the owner hands the organization over, to another member; they stay on as an admin. */
+export function canTransferOwnership(actor: OrgRole): boolean {
+  return actor === "OWNER";
+}
+
+/** The owner can't leave (they transfer ownership or delete the organization first). */
 export function canLeave(actor: OrgRole): boolean {
   return actor !== "OWNER";
 }

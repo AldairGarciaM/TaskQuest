@@ -218,6 +218,7 @@ enum NotificationType {
   ORG_TASK_CHANGES_REQUESTED
   ORG_TASK_RESCHEDULED
   ORG_TASK_SUBMITTED
+  ORG_OWNERSHIP_TRANSFERRED
 }
 
 /// Something that happened to the user's work while they weren't looking (e.g. a manager reviewed it).
@@ -225,6 +226,7 @@ enum NotificationType {
 model Notification {
   id        String           @id @default(cuid())
   type      NotificationType
+  /// The task title, or the organization name for notices about the organization itself.
   taskTitle String
   /// XP paid to the recipient (approvals only).
   xp        Int              @default(0)

@@ -14,6 +14,14 @@ export const createOrganizationSchema = z.object({ name: organizationNameSchema 
 
 export const idSchema = z.string().min(1).max(64);
 
+/** The organization's name, typed again to confirm handing it over. */
+export const transferConfirmationSchema = z.string().max(100);
+
+/** Typed confirmation matches the name, ignoring case and surrounding spaces. */
+export function confirmsName(typed: string, name: string): boolean {
+  return typed.trim().toLocaleLowerCase("es") === name.trim().toLocaleLowerCase("es");
+}
+
 export const assignableRoleSchema = z.enum(ASSIGNABLE_ROLES, { error: "Elige un rol válido" });
 
 export const inviteMemberSchema = z.object({

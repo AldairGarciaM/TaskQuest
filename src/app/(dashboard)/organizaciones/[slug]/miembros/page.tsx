@@ -5,7 +5,8 @@ import JoinCodePanel from "@/components/organization/JoinCodePanel";
 import MemberList from "@/components/organization/MemberList";
 import OrganizationDangerZone from "@/components/organization/OrganizationDangerZone";
 import PendingInvitations from "@/components/organization/PendingInvitations";
-import { canManageInvitations, invitableRoles } from "@/lib/organizations/permissions";
+import TransferOwnership from "@/components/organization/TransferOwnership";
+import { canManageInvitations, canTransferOwnership, invitableRoles } from "@/lib/organizations/permissions";
 import { cn } from "@/lib/utils";
 
 import { loadOrganization } from "../organization";
@@ -26,6 +27,7 @@ export default async function MembersPage({ params }: PageProps) {
   const canInviteAny = roles.length > 0;
   const managesInvitations = canManageInvitations(organization.myRole);
   const hasOptions = canInviteAny || managesInvitations;
+  const isOwner = canTransferOwnership(organization.myRole);
 
   return (
     <div className={cn("space-y-10", hasOptions ? "max-w-6xl" : "max-w-3xl")}>
@@ -90,11 +92,21 @@ export default async function MembersPage({ params }: PageProps) {
         )}
       </div>
 
-      <OrganizationDangerZone
-        organizationId={organization.id}
-        organizationName={organization.name}
-        myRole={organization.myRole}
-      />
+      <div className={cn("grid gap-6", isOwner && "lg:grid-cols-2 lg:items-start")}>
+        {isOwner && (
+          <TransferOwnership
+            organizationId={organization.id}
+            organizationName={organization.name}
+            myUserId={user.id}
+            members={organization.members}
+          />
+        )}
+        <OrganizationDangerZone
+          organizationId={organization.id}
+          organizationName={organization.name}
+          myRole={organization.myRole}
+        />
+      </div>
     </div>
   );
 }

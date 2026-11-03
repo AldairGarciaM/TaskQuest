@@ -23,6 +23,13 @@ export function notificationText(n: NotificationContent): { title: string; descr
     };
   }
 
+  if (n.type === "ORG_OWNERSHIP_TRANSFERRED") {
+    return {
+      title: "La organización ahora es tuya",
+      description: `${n.actorName ?? "El dueño anterior"} te pasó la propiedad de “${n.taskTitle}”.`,
+    };
+  }
+
   if (n.type === "ORG_TASK_SUBMITTED") {
     return {
       title: "Tarea para revisar",

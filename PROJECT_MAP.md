@@ -72,7 +72,7 @@ src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
 src/components/layout/      DashboardLayout (props userName, userId, notifications, organizations; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate; bajo "Organizaciones" atajos a mis equipos: iniciales con color por id, nombre, contador de lo que me espera, máx. 5 + "Ver todas", el equipo abierto siempre visible y resaltado; sin equipos → "Crea o únete a un equipo"), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
-                            MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
+                            MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar), TransferOwnership (solo dueño: elegir miembro, escribir el nombre para confirmar; junto a la zona de peligro en Miembros)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
                             OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking (ranking del mes con flechas ?mes=, sin meses futuros), RejectTaskDialog (nota opcional), ChooseReviewerDialog (elegir dueño/admin que revisa una tarea tomada de la bolsa), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; si el servidor responde needsReviewer abre ChooseReviewerDialog; devuelve `reviewerDialog` para esparcirlo en el diálogo; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
@@ -195,6 +195,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `changeMemberRole(orgId, userId, role)` | idem | Solo OWNER; entre ADMIN y MEMBER |
 | `removeMember(orgId, userId)` | idem | OWNER quita ADMIN/MEMBER; ADMIN quita MEMBER; nadie quita al dueño ni a sí mismo |
 | `leaveOrganization(orgId)` / `deleteOrganization(orgId)` | idem | Salir (no el dueño) / eliminar (solo dueño, cascada) |
+| `transferOwnership(orgId, newOwnerId, confirmación)` | idem | Solo el dueño, a un miembro actual (no a sí mismo). La confirmación debe ser el nombre (sin distinguir mayúsculas ni espacios al borde; acentos sí). Respeta MAX_OWNED_ORGANIZATIONS del nuevo. Transacción condicional: dueño → ADMIN, miembro → OWNER (nunca dos dueños). Notifica ORG_OWNERSHIP_TRANSFERRED |
 | `createOrgTask(orgId, input)` | `src/app/actions/org-tasks.ts` | OWNER/ADMIN. `assigneeId` vacío = libre; si viene, debe ser miembro. XP según dificultad (servidor) |
 | `updateOrgTask(id, input)` | idem | OWNER/ADMIN; solo pendientes (completada → reabrir primero). Puede reasignar o liberar |
 | `rescheduleOrgTask(id, dueDate)` | `src/app/actions/org-tasks.ts` | Solo OWNER/ADMIN (canManageTasks) y tareas PENDING. En transacción cambia dueDate y notifica al asignado (ORG_TASK_RESCHEDULED con dueDate) si no es quien la movió |
@@ -231,7 +232,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | RateLimit | key (PK, p. ej. "login:account:<userId>"), count, resetAt (timestamptz) | Contadores de ventana fija; las vencidas se borran al azar (2 % de los hits). Las pruebas la truncan |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
-Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED/ORG_TASK_SUBMITTED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
+Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED/ORG_TASK_SUBMITTED/ORG_OWNERSHIP_TRANSFERRED (taskTitle = nombre de la organización) · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
@@ -294,6 +295,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Transferir propiedad: el dueño anterior queda como ADMIN (no MEMBER ni fuera) para no perder acceso de golpe; si quiere irse, sale después. Se confirma escribiendo el nombre de la organización porque no se puede deshacer sin el nuevo dueño. Avisa al nuevo dueño con una notificación (reusa taskTitle para el nombre de la organización en vez de agregar columna). Solo se elige entre miembros actuales.
 - 2026-11-03: Atajos a organizaciones en el menú lateral (propuesta para usuario casual, aprobada por el usuario): lista bajo "Organizaciones" con un contador de lo que espera al usuario (sus tareas pendientes + revisiones que le pidieron). Se eligió el menú (no el dashboard ni el navbar) porque está en todas las páginas y en el menú móvil. Se calcula en cada carga del layout (2 groupBy + memberships).
 - 2026-11-03: Vista semanal como agenda (un día por fila con todas sus tareas) en lugar de 7 columnas: las filas completas no caben en columnas de ~140 px y la agenda funciona igual en teléfono. Sin panel lateral: completar, editar, crear (+ por día) y arrastrar se hacen en la misma fila. La vista va en la URL (no se recuerda la última elegida).
 - 2026-11-03: Revisión dirigida (decisión del usuario): una tarea asignada por un dueño/admin se envía a revisión a esa persona y solo ella recibe el aviso; si ya no es dueño/admin (o salió), el miembro elige. Las tomadas de la bolsa piden elegir dueño/admin al entregar. Cualquier dueño/admin puede seguir aprobando o devolviendo (por si el revisor no está); la tarjeta muestra "Revisa X" / "Te toca revisar". El backfill asigna assignedById = createdById en tareas asignadas existentes.
@@ -315,7 +317,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 En curso — organizaciones (idea del usuario 2026-10-26)
 - [x] Perfil: nombre, apellidos, usuario; login con correo o usuario.
 - [x] Organizaciones, roles (Dueño/Admin/Miembro), invitaciones por correo (nodemailer; sin SMTP → consola + copiar enlace), página para aceptar invitación.
-- [ ] Transferir la propiedad de una organización.
+- [x] Transferir la propiedad de una organización (el dueño anterior queda como admin).
 - [x] Límite de invitaciones: 20 por hora por persona (todas sus organizaciones).
 - [x] Tablero de la organización: asignar o dejar libre, tomar/soltar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
 - [x] Ranking mensual con navegación entre meses.
@@ -371,6 +373,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/org-transfer-ownership` (sobre `main`): transferir la propiedad de una organización desde Miembros, aviso al nuevo dueño, migración `org_ownership_transferred`. 292 pruebas pasan, build OK.
 - 2026-11-03: `feat/calendar-week` y `feat/sidebar-orgs` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
 - 2026-11-03: Rama `feat/sidebar-orgs` (sobre `feat/calendar-week`): atajos a mis organizaciones en el menú lateral y móvil con contador de pendientes; getSidebarOrganizations. 284 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/calendar-week` (sobre `main`): vista semanal del calendario tipo agenda, selector Mes/Semana en la URL; lógica del calendario extraída a useCalendarTasks y entries.tsx (la vista mensual se comporta igual). 283 pruebas pasan, build OK.
