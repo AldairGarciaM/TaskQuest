@@ -11,8 +11,17 @@ import { dayLabel, monthGrid, WEEKDAY_LABELS, type CalendarDay, type YearMonth }
 import type { CalendarMonth } from "@/lib/data/calendar";
 import { cn } from "@/lib/utils";
 
-import { EntryRow, entryKey, isDone, isMovable, isPending, type Entry } from "./entries";
-import { useCalendarTasks, type DropTarget } from "./useCalendarTasks";
+import {
+  EntryRow,
+  entryKey,
+  isDone,
+  isMovable,
+  isPending,
+  TOUCH_HOLD_CLASS,
+  TouchDragGhost,
+  type Entry,
+} from "./entries";
+import { useCalendarTasks, type DropTarget, type TouchSource } from "./useCalendarTasks";
 
 interface CalendarViewProps {
   month: YearMonth;
@@ -31,8 +40,6 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 export default function CalendarView({ month, today, data, userId, initialDay }: CalendarViewProps) {
   const reduceMotion = useReducedMotion();
-  const calendar = useCalendarTasks(data, today, userId);
-  const { byDay, draggingKey } = calendar;
   const grid = monthGrid(month);
   const [selected, setSelected] = useState(
     () =>
@@ -40,6 +47,9 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
       grid.find((d) => d.key === today)?.key ??
       grid.find((d) => d.inMonth)!.key,
   );
+  // A dropped task opens its new day in the panel.
+  const calendar = useCalendarTasks(data, today, userId, setSelected);
+  const { byDay, draggingKey } = calendar;
   const cells = useRef(new Map<string, HTMLButtonElement>());
 
   const selectedEntries = byDay.get(selected) ?? [];
@@ -104,7 +114,8 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
               draggingKey={draggingKey}
               onChipDragStart={calendar.startDrag}
               onDragEnd={calendar.endDrag}
-              dropTarget={calendar.dropTarget(day.key, setSelected)}
+              touchSource={calendar.touchSource}
+              dropTarget={calendar.dropTarget(day.key)}
               buttonRef={(node) => {
                 if (node) cells.current.set(day.key, node);
                 else cells.current.delete(day.key);
@@ -168,6 +179,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
                     onEdit={(task) => calendar.openForm(task)}
                     onDragStart={calendar.startDrag}
                     onDragEnd={calendar.endDrag}
+                    touchSource={calendar.touchSource}
                   />
                 </motion.li>
               ))}
@@ -177,6 +189,7 @@ export default function CalendarView({ month, today, data, userId, initialDay }:
       </section>
 
       <TaskFormSheet {...calendar.form} />
+      <TouchDragGhost ghost={calendar.touchGhost} ghostRef={calendar.ghostRef} />
     </div>
   );
 }
@@ -217,8 +230,11 @@ export function CalendarSummary({
           <span className="size-2 rounded-full bg-sky-400" aria-hidden /> Equipo
         </span>
       </span>
-      <span className="hidden w-full text-slate-500 lg:block">
+      <span className="hidden w-full text-slate-500 pointer-fine:lg:block">
         Arrastra una misión pendiente a otro día para cambiar su fecha. Las de equipo solo las mueven sus dueños y admins.
+      </span>
+      <span className="hidden w-full text-slate-500 pointer-coarse:block">
+        Mantén presionada una misión pendiente y arrástrala a otro día. Las de equipo solo las mueven sus dueños y admins.
       </span>
     </div>
   );
@@ -235,6 +251,7 @@ interface DayCellProps {
   draggingKey: string | null;
   onChipDragStart: (event: DragEvent, entry: Entry) => void;
   onDragEnd: () => void;
+  touchSource: (entry: Entry) => TouchSource;
   dropTarget: DropTarget;
   buttonRef: (node: HTMLButtonElement | null) => void;
   onSelect: () => void;
@@ -251,6 +268,7 @@ function DayCell({
   draggingKey,
   onChipDragStart,
   onDragEnd,
+  touchSource,
   dropTarget,
   buttonRef,
   onSelect,
@@ -326,10 +344,11 @@ function DayCell({
               onDragStart: (event: DragEvent) => onChipDragStart(event, entry),
               onDragEnd,
               onClick: onSelect,
+              ...touchSource(entry),
             })}
             className={cn(
               "flex items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-[11px] leading-4 transition-opacity duration-150",
-              isMovable(entry) && "pointer-events-auto cursor-grab active:cursor-grabbing",
+              isMovable(entry) && cn("pointer-events-auto cursor-grab active:cursor-grabbing", TOUCH_HOLD_CLASS),
               draggingKey === entryKey(entry) && "opacity-40",
               isDone(entry)
                 ? "text-slate-500 line-through"
