@@ -4,6 +4,7 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import type { SidebarOrganization } from "@/lib/data/organizations";
 
 import SidebarNav from "./SidebarNav";
 
@@ -11,7 +12,7 @@ const iconButton =
   "grid size-10 shrink-0 place-items-center rounded-full bg-slate-800 transition-[background-color,transform] duration-150 hover:bg-slate-700 focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:outline-none active:scale-[0.97]";
 
 /** Menu button + slide-in navigation for screens without the sidebar. */
-export default function MobileNav() {
+export default function MobileNav({ organizations }: { organizations: SidebarOrganization[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,7 +34,7 @@ export default function MobileNav() {
         </div>
 
         {/* Close on every tap, including the link to the page already open. */}
-        <SidebarNav onNavigate={() => setOpen(false)} />
+        <SidebarNav organizations={organizations} onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

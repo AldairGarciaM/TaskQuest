@@ -15,7 +15,7 @@ import {
 } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
 import { MAX_OWNED_ORGANIZATIONS } from "@/lib/organizations/permissions";
-import { getOrganizationForMember } from "@/lib/data/organizations";
+import { getOrganizationForMember, getSidebarOrganizations } from "@/lib/data/organizations";
 import { INVITE_USER_LIMIT, JOIN_CODE_USER_LIMIT } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 
@@ -464,5 +464,35 @@ describe("join codes", () => {
     expect(await joinOrganizationByCode({ code: "nope" })).toMatchObject({ ok: false, fieldErrors: { code: [expect.any(String)] } });
     signOut();
     await expect(joinOrganizationByCode({ code: "ABCD-2345" })).rejects.toThrow(/NEXT_REDIRECT/);
+  });
+});
+
+describe("getSidebarOrganizations", () => {
+  it("lists my organizations in join order with what waits on me in each", async () => {
+    const me = await createUser();
+    const boss = await createUser();
+    const stamp = Date.now();
+    const work = await prisma.organization.create({ data: { name: "Trabajo", slug: `trabajo-${stamp}` } });
+    const club = await prisma.organization.create({ data: { name: "Club", slug: `club-${stamp}` } });
+    const other = await prisma.organization.create({ data: { name: "Ajena", slug: `ajena-${stamp}` } });
+    await prisma.membership.create({ data: { organizationId: work.id, userId: me.id, role: "MEMBER" } });
+    await prisma.membership.create({ data: { organizationId: club.id, userId: me.id, role: "ADMIN" } });
+    await prisma.membership.create({ data: { organizationId: other.id, userId: boss.id, role: "OWNER" } });
+
+    const orgTask = (organizationId: string, data: Record<string, unknown>) =>
+      prisma.orgTask.create({ data: { organizationId, title: "T", xpReward: 10, ...data } });
+    await orgTask(work.id, { assigneeId: me.id });
+    await orgTask(work.id, { assigneeId: me.id });
+    await orgTask(work.id, { assigneeId: me.id, status: "COMPLETED" });
+    await orgTask(work.id, {}); // open: not mine yet
+    // In Work I'm a member: a stale review request there doesn't count.
+    await orgTask(work.id, { assigneeId: boss.id, status: "IN_REVIEW", requestedReviewerId: me.id });
+    await orgTask(club.id, { assigneeId: boss.id, status: "IN_REVIEW", requestedReviewerId: me.id });
+    await orgTask(club.id, { assigneeId: boss.id, status: "IN_REVIEW" });
+
+    expect(await getSidebarOrganizations(me.id)).toEqual([
+      { id: work.id, name: "Trabajo", slug: work.slug, attention: 2 },
+      { id: club.id, name: "Club", slug: club.slug, attention: 1 },
+    ]);
   });
 });

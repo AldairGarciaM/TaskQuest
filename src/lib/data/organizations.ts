@@ -33,6 +33,46 @@ export async function getMyOrganizations(userId: string): Promise<OrganizationSu
   }));
 }
 
+export interface SidebarOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  /** What waits on me there: my pending tasks, plus tasks sent to me for review. */
+  attention: number;
+}
+
+/** My organizations for the navigation shortcut, in the order I joined them. */
+export async function getSidebarOrganizations(userId: string): Promise<SidebarOrganization[]> {
+  const [memberships, mine, toReview] = await Promise.all([
+    prisma.membership.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: { organization: { select: { id: true, name: true, slug: true } } },
+    }),
+    prisma.orgTask.groupBy({
+      by: ["organizationId"],
+      where: { assigneeId: userId, status: "PENDING" },
+      _count: { _all: true },
+    }),
+    prisma.orgTask.groupBy({
+      by: ["organizationId"],
+      // Only while I can still review there (a demoted reviewer's requests are anyone's).
+      where: {
+        requestedReviewerId: userId,
+        status: "IN_REVIEW",
+        organization: { members: { some: { userId, role: { in: ["OWNER", "ADMIN"] } } } },
+      },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const counts = new Map<string, number>();
+  for (const row of [...mine, ...toReview]) {
+    counts.set(row.organizationId, (counts.get(row.organizationId) ?? 0) + row._count._all);
+  }
+  return memberships.map(({ organization }) => ({ ...organization, attention: counts.get(organization.id) ?? 0 }));
+}
+
 export interface MemberDTO {
   userId: string;
   firstName: string;

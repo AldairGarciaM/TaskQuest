@@ -70,7 +70,7 @@ src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/
 src/components/auth/        RotatingTagline (frase del panel de marca tecleada letra por letra con cursor, se borra y pasa a la siguiente; fija con reduced motion; sr-only estable), ForgotPasswordForm, ResetPasswordForm, AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
-src/components/layout/      DashboardLayout (props userName, userId, notifications; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
+src/components/layout/      DashboardLayout (props userName, userId, notifications, organizations; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate; bajo "Organizaciones" atajos a mis equipos: iniciales con color por id, nombre, contador de lo que me espera, máx. 5 + "Ver todas", el equipo abierto siempre visible y resaltado; sin equipos → "Crea o únete a un equipo"), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
@@ -107,7 +107,7 @@ src/lib/dates.ts            APP_TIME_ZONE, dayKey, startOfDayInZone (medianoche 
 src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
 src/lib/data/org-board.ts   getOrgBoard(orgId, members, mes): tareas (OrgTaskDTO) + ranking por XP ganada en la org en ese mes (completedAt en APP_TIME_ZONE); getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100); getDashboardOrgTasks(userId, n): { active, completed (últimas n), completedTotal }, con organización y canReview
-src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
+src/lib/data/organizations.ts getMyOrganizations, getSidebarOrganizations(userId) (atajos del menú: { id, name, slug, attention } = mis pendientes + revisiones que me pidieron siendo dueño/admin; lo carga el layout del dashboard), getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug, createJoinCode (8 chars, sin sesgo)
 src/lib/organizations/join-code.ts   JOIN_CODE_ALPHABET (sin 0/O/1/I/L), JOIN_CODE_LENGTH, formatJoinCode ("ABCD-2345"); puro, se puede importar en cliente
@@ -172,7 +172,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/api/session/expired` | `src/app/api/session/expired/route.ts` | GET: limpia cookie de sesión revocada |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
-Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadísticas, Historial (ya no queda nada en "Pronto"; AppSidebar conserva el estilo para futuros). Las subrutas resaltan su sección.
+Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadísticas, Historial (ya no queda nada en "Pronto"; AppSidebar conserva el estilo para futuros). Las subrutas resaltan su sección; dentro de una organización con atajo se resalta el atajo en lugar de "Organizaciones".
 
 ## API / Server Actions
 | Nombre | Archivo | Qué hace |
@@ -294,6 +294,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Atajos a organizaciones en el menú lateral (propuesta para usuario casual, pendiente de aprobación): lista bajo "Organizaciones" con un contador de lo que espera al usuario (sus tareas pendientes + revisiones que le pidieron). Se eligió el menú (no el dashboard ni el navbar) porque está en todas las páginas y en el menú móvil. Se calcula en cada carga del layout (2 groupBy + memberships).
 - 2026-11-03: Vista semanal como agenda (un día por fila con todas sus tareas) en lugar de 7 columnas: las filas completas no caben en columnas de ~140 px y la agenda funciona igual en teléfono. Sin panel lateral: completar, editar, crear (+ por día) y arrastrar se hacen en la misma fila. La vista va en la URL (no se recuerda la última elegida).
 - 2026-11-03: Revisión dirigida (decisión del usuario): una tarea asignada por un dueño/admin se envía a revisión a esa persona y solo ella recibe el aviso; si ya no es dueño/admin (o salió), el miembro elige. Las tomadas de la bolsa piden elegir dueño/admin al entregar. Cualquier dueño/admin puede seguir aprobando o devolviendo (por si el revisor no está); la tarjeta muestra "Revisa X" / "Te toca revisar". El backfill asigna assignedById = createdById en tareas asignadas existentes.
 - 2026-11-03: Ranking mensual (decisión del usuario): cuenta tareas aprobadas (completedAt) dentro del mes en hora de Ciudad de México. Reemplaza al histórico. Se puede ver meses anteriores con `?mes=`; los futuros redirigen al actual. Reabrir una tarea la quita del mes en que se aprobó.
@@ -370,6 +371,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/sidebar-orgs` (sobre `feat/calendar-week`): atajos a mis organizaciones en el menú lateral y móvil con contador de pendientes; getSidebarOrganizations. 284 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/calendar-week` (sobre `main`): vista semanal del calendario tipo agenda, selector Mes/Semana en la URL; lógica del calendario extraída a useCalendarTasks y entries.tsx (la vista mensual se comporta igual). 283 pruebas pasan, build OK.
 - 2026-11-03: `feat/org-ranking-monthly` y `feat/org-task-reviewer` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
 - 2026-11-03: Rama `feat/org-task-reviewer` (sobre `feat/org-ranking-monthly`): aviso al gerente que asignó la tarea cuando se envía a revisión; elegir revisor en tareas libres; migración `org_task_reviewer` (assignedById, requestedReviewerId, ORG_TASK_SUBMITTED). 278 pruebas pasan, build OK.
