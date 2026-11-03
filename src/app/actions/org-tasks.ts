@@ -80,6 +80,24 @@ async function reviewerIn(organizationId: string, userId: string) {
   return membership && canManageTasks(membership.role) ? membership.user : null;
 }
 
+/** Tells someone a manager gave them a task (not when managers assign it to themselves). */
+async function notifyAssigned(
+  tx: Prisma.TransactionClient,
+  assigneeId: string,
+  manager: { id: string; firstName: string },
+  organizationId: string,
+  taskTitle: string,
+) {
+  if (assigneeId === manager.id) return;
+  await notifyReview(tx, {
+    type: "ORG_TASK_ASSIGNED",
+    userId: assigneeId,
+    organizationId,
+    taskTitle,
+    actorName: manager.firstName,
+  });
+}
+
 function invalidInput(error: z.ZodError): Failure {
   return { ok: false, fieldErrors: z.flattenError(error).fieldErrors as OrgTaskFieldErrors };
 }
@@ -99,18 +117,21 @@ export async function createOrgTask(organizationId: unknown, input: unknown): Pr
   if (assigneeId && !(await roleIn(orgId.data, assigneeId))) return { ok: false, fieldErrors: NOT_A_MEMBER };
 
   try {
-    await prisma.orgTask.create({
-      data: {
-        organizationId: orgId.data,
-        title,
-        description,
-        difficulty,
-        xpReward: XP_BY_DIFFICULTY[difficulty],
-        dueDate: dueDate ? dueDateFromInput(dueDate) : null,
-        assigneeId: assigneeId ?? null,
-        assignedById: assigneeId ? user.id : null,
-        createdById: user.id,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.orgTask.create({
+        data: {
+          organizationId: orgId.data,
+          title,
+          description,
+          difficulty,
+          xpReward: XP_BY_DIFFICULTY[difficulty],
+          dueDate: dueDate ? dueDateFromInput(dueDate) : null,
+          assigneeId: assigneeId ?? null,
+          assignedById: assigneeId ? user.id : null,
+          createdById: user.id,
+        },
+      });
+      if (assigneeId) await notifyAssigned(tx, assigneeId, user, orgId.data, title);
     });
   } catch (error) {
     console.error("createOrgTask failed", error);
@@ -138,21 +159,32 @@ export async function updateOrgTask(taskId: unknown, input: unknown): Promise<Re
 
   const nextAssignee = assigneeId ?? null;
   const sameAssignee = nextAssignee === found.task.assigneeId;
-  const { count } = await prisma.orgTask.updateMany({
-    where: { id: found.task.id, status: "PENDING" },
-    data: {
-      title,
-      description: description ?? null,
-      difficulty,
-      xpReward: XP_BY_DIFFICULTY[difficulty],
-      dueDate: dueDate ? dueDateFromInput(dueDate) : null,
-      assigneeId: nextAssignee,
-      // Same person keeps how they got it; a new assignee was chosen by this manager.
-      selfAssigned: nextAssignee !== null && sameAssignee && found.task.selfAssigned,
-      ...(sameAssignee ? {} : { assignedById: nextAssignee ? user.id : null }),
-    },
-  });
-  if (count === 0) return { ok: false, error: "Solo se pueden editar tareas pendientes." };
+  let updated: boolean;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const { count } = await tx.orgTask.updateMany({
+        where: { id: found.task.id, status: "PENDING" },
+        data: {
+          title,
+          description: description ?? null,
+          difficulty,
+          xpReward: XP_BY_DIFFICULTY[difficulty],
+          dueDate: dueDate ? dueDateFromInput(dueDate) : null,
+          assigneeId: nextAssignee,
+          // Same person keeps how they got it; a new assignee was chosen by this manager.
+          selfAssigned: nextAssignee !== null && sameAssignee && found.task.selfAssigned,
+          ...(sameAssignee ? {} : { assignedById: nextAssignee ? user.id : null }),
+        },
+      });
+      if (count === 0) return false;
+      if (nextAssignee && !sameAssignee) await notifyAssigned(tx, nextAssignee, user, found.task.organizationId, title);
+      return true;
+    });
+  } catch (error) {
+    console.error("updateOrgTask failed", error);
+    return GENERIC_ERROR;
+  }
+  if (!updated) return { ok: false, error: "Solo se pueden editar tareas pendientes." };
 
   revalidateBoard();
   return { ok: true };

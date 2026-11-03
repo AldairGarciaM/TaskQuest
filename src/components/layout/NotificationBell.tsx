@@ -1,7 +1,16 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
-import { Bell, CalendarClock, CircleCheck, ClipboardCheck, Crown, MessageSquareWarning } from "lucide-react";
+import {
+  Bell,
+  CalendarClock,
+  CircleCheck,
+  ClipboardCheck,
+  ClipboardList,
+  Crown,
+  MessageSquareWarning,
+  UserPlus,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,6 +22,7 @@ import { notificationText, timeAgo } from "@/lib/notifications/messages";
 import type { NotificationDTO, NotificationFeed } from "@/lib/notifications/server";
 import { cn } from "@/lib/utils";
 
+/** Polling interval when the live stream (Server-Sent Events) isn't available. */
 const POLL_MS = 30_000;
 /** More new notifications than this at once collapse into a single toast. */
 const MAX_TOASTS = 3;
@@ -49,7 +59,14 @@ const NOTIFICATION_ICON: Record<NotificationDTO["type"], { Icon: typeof Bell; cl
   ORG_TASK_RESCHEDULED: { Icon: CalendarClock, className: "bg-sky-500/15 text-sky-300" },
   ORG_TASK_SUBMITTED: { Icon: ClipboardCheck, className: "bg-violet-500/15 text-violet-300" },
   ORG_OWNERSHIP_TRANSFERRED: { Icon: Crown, className: "bg-yellow-500/15 text-yellow-300" },
+  ORG_TASK_ASSIGNED: { Icon: ClipboardList, className: "bg-sky-500/15 text-sky-300" },
+  ORG_INVITATION_RECEIVED: { Icon: UserPlus, className: "bg-emerald-500/15 text-emerald-300" },
 };
+
+/** Where a notification leads: the organization, or (not a member yet) the invitations list. */
+function notificationHref(n: NotificationDTO) {
+  return n.type === "ORG_INVITATION_RECEIVED" ? "/organizaciones#invitaciones" : `/organizaciones/${n.organization.slug}`;
+}
 
 function showToast(n: NotificationDTO) {
   const { title, description } = notificationText(n);
@@ -93,30 +110,82 @@ export default function NotificationBell({ userId, initialFeed }: NotificationBe
     writeNotifiedUntil(userId, unseen[0].createdAt);
   }, [feed, userId]);
 
-  // Poll while the tab is visible so a review shows up without reloading.
+  // Live updates while the tab is visible: a stream from the server (within seconds), or polling
+  // when the stream isn't available. Hidden tabs disconnect and catch up when shown again.
   useEffect(() => {
     let cancelled = false;
+    let source: EventSource | null = null;
+    let fallback: number | undefined;
+
+    function apply(next: NotificationFeed) {
+      const newest = latestFeed.current.items[0]?.createdAt ?? "";
+      setFeed(next);
+      // An approval or a new task changed what the pages show (XP, boards): re-render them.
+      if (next.items.some((n) => n.createdAt > newest)) router.refresh();
+    }
 
     async function poll() {
       if (document.visibilityState !== "visible") return;
       try {
         const next = await fetchNotifications();
-        if (cancelled) return;
-        const newest = latestFeed.current.items[0]?.createdAt ?? "";
-        setFeed(next);
-        // An approval changed my XP and level: re-render the server parts (hero, boards).
-        if (next.items.some((n) => n.createdAt > newest)) router.refresh();
+        if (!cancelled) apply(next);
       } catch {
         // Offline or signed out: try again on the next tick.
       }
     }
 
-    const timer = window.setInterval(poll, POLL_MS);
-    document.addEventListener("visibilitychange", poll);
+    function startPolling() {
+      if (fallback === undefined) fallback = window.setInterval(poll, POLL_MS);
+    }
+
+    function stopPolling() {
+      window.clearInterval(fallback);
+      fallback = undefined;
+    }
+
+    function connect() {
+      if (source) return;
+      if (typeof EventSource === "undefined") {
+        startPolling();
+        void poll();
+        return;
+      }
+      source = new EventSource("/api/notifications/stream");
+      source.onopen = stopPolling;
+      // The stream sends the whole feed on connect and on every change.
+      source.addEventListener("feed", (event) => {
+        try {
+          apply(JSON.parse((event as MessageEvent<string>).data) as NotificationFeed);
+        } catch {
+          // A malformed message: the next one replaces it.
+        }
+      });
+      source.onerror = () => {
+        // EventSource retries by itself; CLOSED means it gave up (e.g. signed out): poll instead.
+        if (source?.readyState === EventSource.CLOSED) {
+          source = null;
+          startPolling();
+        }
+      };
+    }
+
+    function disconnect() {
+      source?.close();
+      source = null;
+      stopPolling();
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") connect();
+      else disconnect();
+    }
+
+    if (document.visibilityState === "visible") connect();
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", poll);
+      disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [router]);
 
@@ -177,7 +246,7 @@ export default function NotificationBell({ userId, initialFeed }: NotificationBe
                 <Bell size={22} className="mx-auto text-slate-600" />
                 <p className="mt-3 text-sm text-slate-300">Todo tranquilo por aquí</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Te avisaremos cuando revisen tus tareas de equipo.
+                  Aquí verás al momento tareas asignadas, revisiones e invitaciones.
                 </p>
               </div>
             ) : (
@@ -207,7 +276,7 @@ function NotificationRow({ notification: n, isNew, onNavigate }: NotificationRow
   return (
     <li>
       <Link
-        href={`/organizaciones/${n.organization.slug}`}
+        href={notificationHref(n)}
         onClick={onNavigate}
         className={cn(
           "flex gap-3 px-4 py-3 transition-colors hover:bg-slate-800/70 focus-visible:bg-slate-800/70 focus-visible:outline-none",

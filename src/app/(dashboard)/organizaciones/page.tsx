@@ -4,8 +4,9 @@ import Link from "next/link";
 
 import CreateOrganizationForm from "@/components/organization/CreateOrganizationForm";
 import JoinOrganizationForm from "@/components/organization/JoinOrganizationForm";
+import MyInvitations from "@/components/organization/MyInvitations";
 import RoleBadge from "@/components/organization/RoleBadge";
-import { getMyOrganizations } from "@/lib/data/organizations";
+import { getMyOrganizations, getMyPendingInvitations } from "@/lib/data/organizations";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = {
@@ -14,7 +15,10 @@ export const metadata: Metadata = {
 
 export default async function OrganizationsPage() {
   const user = await requireUser();
-  const organizations = await getMyOrganizations(user.id);
+  const [organizations, invitations] = await Promise.all([
+    getMyOrganizations(user.id),
+    getMyPendingInvitations(user.id),
+  ]);
 
   return (
     <div className="max-w-5xl space-y-10">
@@ -22,6 +26,8 @@ export default async function OrganizationsPage() {
         <h1 className="text-3xl font-bold">Organizaciones</h1>
         <p className="text-slate-400">Reúne a tu equipo. La XP que ganen juntos sube su nivel personal.</p>
       </header>
+
+      {invitations.length > 0 && <MyInvitations invitations={invitations} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section

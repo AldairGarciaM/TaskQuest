@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { Prisma } from "@/generated/prisma/client";
+import type { OrgRole } from "@/generated/prisma/enums";
 import { findInvitationByToken } from "@/lib/data/organizations";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { hashPassword, takenProfileFields, type ProfileFieldErrors } from "@/lib/user";
 import { profileSchema } from "@/lib/validations/auth";
-import { invitationTokenSchema } from "@/lib/validations/organization";
+import { idSchema, invitationTokenSchema } from "@/lib/validations/organization";
 
 type Failure = { ok: false; error?: string; fieldErrors?: ProfileFieldErrors };
 
@@ -47,26 +48,69 @@ export async function acceptInvitation(token: unknown): Promise<{ ok: true; slug
     return { ok: false, error: "Esta invitación es para otra cuenta de correo." };
   }
 
+  const failure = await joinWithInvitation(user.id, invitation);
+  return failure ?? { ok: true, slug: invitation.organizationSlug };
+}
+
+/** Uses the invitation and makes the user a member with its role. Returns why it failed, or null. */
+async function joinWithInvitation(
+  userId: string,
+  invitation: { id: string; organizationId: string; role: OrgRole },
+): Promise<Failure | null> {
   try {
     await prisma.$transaction(async (tx) => {
       await claim(tx, invitation.id);
       // Already a member (e.g. invited twice): keep the current role.
       await tx.membership.upsert({
-        where: { organizationId_userId: { organizationId: invitation.organizationId, userId: user.id } },
-        create: { organizationId: invitation.organizationId, userId: user.id, role: invitation.role },
+        where: { organizationId_userId: { organizationId: invitation.organizationId, userId } },
+        create: { organizationId: invitation.organizationId, userId, role: invitation.role },
         update: {},
       });
     });
   } catch (error) {
     if (error instanceof InvitationUsedError) return UNAVAILABLE;
-    console.error("acceptInvitation failed", error);
+    console.error("joinWithInvitation failed", error);
     return GENERIC_ERROR;
   }
 
   revalidatePath("/organizaciones", "layout");
   revalidatePath("/misiones");
   revalidatePath("/");
-  return { ok: true, slug: invitation.organizationSlug };
+  return null;
+}
+
+/** An invitation to the signed-in account's email that can still be used, by id (the Organizaciones list). */
+async function myPendingInvitation(invitationId: unknown, userId: string) {
+  const id = idSchema.safeParse(invitationId);
+  if (!id.success) return null;
+  // Read the email from the database, not the session token.
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  if (!account) return null;
+  return prisma.invitation.findFirst({
+    where: { id: id.data, email: account.email, acceptedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true, role: true, organizationId: true, organization: { select: { slug: true } } },
+  });
+}
+
+/** Accept an invitation listed in Organizaciones, without the email link. */
+export async function acceptMyInvitation(invitationId: unknown): Promise<{ ok: true; slug: string } | Failure> {
+  const user = await requireUser();
+  const invitation = await myPendingInvitation(invitationId, user.id);
+  if (!invitation) return UNAVAILABLE;
+
+  const failure = await joinWithInvitation(user.id, invitation);
+  return failure ?? { ok: true, slug: invitation.organization.slug };
+}
+
+/** Turn down an invitation listed in Organizaciones: it's deleted, so its link stops working too. */
+export async function declineMyInvitation(invitationId: unknown): Promise<{ ok: true } | Failure> {
+  const user = await requireUser();
+  const invitation = await myPendingInvitation(invitationId, user.id);
+  if (!invitation) return UNAVAILABLE;
+
+  await prisma.invitation.deleteMany({ where: { id: invitation.id, acceptedAt: null } });
+  revalidatePath("/organizaciones", "layout");
+  return { ok: true };
 }
 
 /** Create an account for the invited email and join in one step. The client signs in afterwards. */

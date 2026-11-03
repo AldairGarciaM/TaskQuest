@@ -451,7 +451,7 @@ describe("rescheduleOrgTask", () => {
 
     expect(await dueOf(task.id)).toBe("2026-11-06T00:00:00.000Z");
     expect(await taskRow(task.id)).toMatchObject({ assigneeId: member.id, status: "PENDING" });
-    const notices = await prisma.notification.findMany({ where: { userId: member.id }, orderBy: { createdAt: "asc" } });
+    const notices = await prisma.notification.findMany({ where: { userId: member.id, type: "ORG_TASK_RESCHEDULED" }, orderBy: { createdAt: "asc" } });
     expect(notices.map((n) => [n.type, n.actorName, n.dueDate?.toISOString()])).toEqual([
       ["ORG_TASK_RESCHEDULED", owner.firstName, "2026-11-05T00:00:00.000Z"],
       ["ORG_TASK_RESCHEDULED", admin.firstName, "2026-11-06T00:00:00.000Z"],
@@ -468,7 +468,7 @@ describe("rescheduleOrgTask", () => {
       error: "No tienes permiso para hacer eso.",
     });
     expect(await dueOf(task.id)).toBe("2026-11-02T00:00:00.000Z");
-    expect(await prisma.notification.count()).toBe(0);
+    expect(await prisma.notification.count({ where: { type: "ORG_TASK_RESCHEDULED" } })).toBe(0);
   });
 
   it("hides tasks of other organizations", async () => {
@@ -486,7 +486,7 @@ describe("rescheduleOrgTask", () => {
 
     expect((await rescheduleOrgTask(open.id, "2026-11-03")).ok).toBe(true);
     expect((await rescheduleOrgTask(mine.id, "2026-11-03")).ok).toBe(true);
-    expect(await prisma.notification.count()).toBe(0);
+    expect(await prisma.notification.count({ where: { type: "ORG_TASK_RESCHEDULED" } })).toBe(0);
   });
 
   it("only moves pending tasks to valid dates", async () => {

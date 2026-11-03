@@ -162,6 +162,44 @@ export async function getOrganizationForMember(slug: string, userId: string): Pr
   };
 }
 
+export interface MyInvitation {
+  id: string;
+  role: OrgRole;
+  organizationName: string;
+  inviterName: string | null;
+  expiresAt: string;
+}
+
+/** Invitations to my email that I can still accept, newest first. */
+export async function getMyPendingInvitations(userId: string): Promise<MyInvitation[]> {
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  if (!account) return [];
+  const rows = await prisma.invitation.findMany({
+    where: {
+      email: account.email,
+      acceptedAt: null,
+      expiresAt: { gt: new Date() },
+      // Joined some other way (code, older link): nothing left to accept.
+      organization: { members: { none: { userId } } },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      role: true,
+      expiresAt: true,
+      organization: { select: { name: true } },
+      invitedBy: { select: { firstName: true, lastName: true } },
+    },
+  });
+  return rows.map((i) => ({
+    id: i.id,
+    role: i.role,
+    organizationName: i.organization.name,
+    inviterName: i.invitedBy ? `${i.invitedBy.firstName} ${i.invitedBy.lastName}` : null,
+    expiresAt: i.expiresAt.toISOString(),
+  }));
+}
+
 export type InvitationLookup =
   | { status: "invalid" }
   | { status: "expired" | "accepted"; organizationName: string }

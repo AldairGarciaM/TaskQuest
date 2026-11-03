@@ -4,7 +4,7 @@ import { getNotificationFeed, type NotificationFeed } from "@/lib/notifications/
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
-/** Polled by the navbar bell so reviews show up without reloading the page. */
+/** The navbar bell polls this when its live stream (/api/notifications/stream) isn't available. */
 export async function fetchNotifications(): Promise<NotificationFeed> {
   const user = await requireUser();
   return getNotificationFeed(user.id);

@@ -23,6 +23,20 @@ export function notificationText(n: NotificationContent): { title: string; descr
     };
   }
 
+  if (n.type === "ORG_TASK_ASSIGNED") {
+    return {
+      title: "Nueva tarea para ti",
+      description: `${n.actorName ?? "Un admin"} te asignó “${n.taskTitle}”.`,
+    };
+  }
+
+  if (n.type === "ORG_INVITATION_RECEIVED") {
+    return {
+      title: "Te invitaron a un equipo",
+      description: `${n.actorName ?? "Alguien"} te invitó a “${n.taskTitle}”. Acéptala en Organizaciones.`,
+    };
+  }
+
   if (n.type === "ORG_OWNERSHIP_TRANSFERRED") {
     return {
       title: "La organización ahora es tuya",

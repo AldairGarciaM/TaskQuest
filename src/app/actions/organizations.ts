@@ -157,10 +157,10 @@ export async function inviteMember(
   const token = createInvitationToken();
   let organizationName: string;
   try {
-    // Inviting the same email again replaces the pending invitation, so only the newest link works.
-    const [, invitation] = await prisma.$transaction([
-      prisma.invitation.deleteMany({ where: { organizationId: orgId.data, email, acceptedAt: null } }),
-      prisma.invitation.create({
+    organizationName = await prisma.$transaction(async (tx) => {
+      // Inviting the same email again replaces the pending invitation, so only the newest link works.
+      await tx.invitation.deleteMany({ where: { organizationId: orgId.data, email, acceptedAt: null } });
+      const invitation = await tx.invitation.create({
         data: {
           organizationId: orgId.data,
           email,
@@ -170,9 +170,20 @@ export async function inviteMember(
           invitedById: user.id,
         },
         select: { organization: { select: { name: true } } },
-      }),
-    ]);
-    organizationName = invitation.organization.name;
+      });
+      // Someone who already has an account also sees it in the app, and can accept it from Organizaciones.
+      const invitee = await tx.user.findUnique({ where: { email }, select: { id: true } });
+      if (invitee) {
+        await notifyReview(tx, {
+          type: "ORG_INVITATION_RECEIVED",
+          userId: invitee.id,
+          organizationId: orgId.data,
+          taskTitle: invitation.organization.name,
+          actorName: user.firstName,
+        });
+      }
+      return invitation.organization.name;
+    });
   } catch (error) {
     console.error("inviteMember failed", error);
     return GENERIC_ERROR;

@@ -64,6 +64,23 @@ export async function notifyReview(tx: Prisma.TransactionClient, notice: ReviewN
   if (stale.length > 0) await tx.notification.deleteMany({ where: { id: { in: stale.map((n) => n.id) } } });
 }
 
+/**
+ * A cheap fingerprint of the user's notifications: it changes when one arrives, is read or is
+ * dropped. The live stream compares it every few seconds and only sends the feed when it moves.
+ */
+export async function getNotificationSignature(userId: string): Promise<string> {
+  const [newest, unread, total] = await Promise.all([
+    prisma.notification.findFirst({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    }),
+    prisma.notification.count({ where: { userId, readAt: null } }),
+    prisma.notification.count({ where: { userId } }),
+  ]);
+  return `${newest?.id ?? "-"}:${unread}:${total}`;
+}
+
 export async function getNotificationFeed(userId: string): Promise<NotificationFeed> {
   const [rows, unreadCount] = await Promise.all([
     prisma.notification.findMany({

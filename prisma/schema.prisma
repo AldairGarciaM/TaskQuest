@@ -219,6 +219,8 @@ enum NotificationType {
   ORG_TASK_RESCHEDULED
   ORG_TASK_SUBMITTED
   ORG_OWNERSHIP_TRANSFERRED
+  ORG_TASK_ASSIGNED
+  ORG_INVITATION_RECEIVED
 }
 
 /// Something that happened to the user's work while they weren't looking (e.g. a manager reviewed it).

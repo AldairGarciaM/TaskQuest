@@ -51,7 +51,8 @@ src/app/(dashboard)/organizaciones/[slug]/page.tsx        tablero: tareas del eq
 src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx  dos columnas en lg (solo si eres dueño/admin): lista de miembros | Agregar miembros (invitar por correo, código, pendientes); zona de peligro abajo
 src/app/actions/account.ts  changePassword, updateProfile
 src/components/account/     ChangePasswordForm (tras cambiarla vuelve a iniciar sesión con la nueva vía signIn; si falla → login), EditProfileForm (nombre, apellidos, usuario, correo; valida en cliente, avisa si no hay cambios y pide confirmación con ConfirmDialog tone="primary")
-src/app/actions/notifications.ts  fetchNotifications (sondeo de la campana), markNotificationsRead
+src/app/actions/notifications.ts  fetchNotifications (respaldo por sondeo de la campana), markNotificationsRead
+src/app/api/notifications/stream/route.ts  SSE de la campana: valida sesión (getServerSession + sessionVersion; 401 si no), manda `retry`, el feed al conectar y cada vez que cambia la firma (revisa cada 2,5 s), ping cada 20 s, se cierra a los 4 min (el navegador reconecta)
 src/app/actions/org-tasks.ts  createOrgTask, updateOrgTask, deleteOrgTask, claimOrgTask, releaseOrgTask, getTaskReviewers, submitOrgTask, approveOrgTask, rejectOrgTask, reopenOrgTask
 src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin sesión; noindex + no-referrer)
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization, regenerateJoinCode, disableJoinCode, joinOrganizationByCode
@@ -70,9 +71,9 @@ src/proxy.ts                Proxy (ex-middleware, Next 16): sin token → /auth/
 src/components/auth/        RotatingTagline (frase del panel de marca tecleada letra por letra con cursor, se borra y pasa a la siguiente; fija con reduced motion; sr-only estable), ForgotPasswordForm, ResetPasswordForm, AuthShell (panel de marca + columna; auth e invitaciones), LoginForm, RegisterForm, ProfileFields (nombre, apellidos, usuario, contraseña; reutilizable), PasswordField, SubmitButton, FormAlert
 src/app/constants/taskDifficulty.tsx  DIFFICULTIES + DifficultyStyles por enum (label ES, color, badge, icono)
 src/components/ui/          shadcn: avatar, badge, button, card, checkbox, dropdown-menu, input, progress, sheet
-src/components/layout/      DashboardLayout (props userName, userId, notifications, organizations; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate; bajo "Organizaciones" atajos a mis equipos: iniciales con color por id, nombre, contador de lo que me espera, máx. 5 + "Ver todas", el equipo abierto siempre visible y resaltado; sin equipos → "Crea o únete a un equipo"), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, sondeo cada 30 s, toasts de lo nuevo, router.refresh al llegar una), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
+src/components/layout/      DashboardLayout (props userName, userId, notifications, organizations; h-dvh, padding p-4/sm:p-6/lg:p-8), SidebarNav (lista de navegación compartida, onNavigate; bajo "Organizaciones" atajos a mis equipos: iniciales con color por id, nombre, contador de lo que me espera, máx. 5 + "Ver todas", el equipo abierto siempre visible y resaltado; sin equipos → "Crea o únete a un equipo"), AppSidebar (solo lg+), MobileNav (botón de menú lg:hidden + Sheet izquierdo con SidebarNav; se cierra al tocar un enlace), NotificationBell (campana: contador, panel Base UI Popover, EventSource a /api/notifications/stream mientras la pestaña está visible (se desconecta oculta; si el stream no está disponible o se cierra, sondeo cada 30 s), toasts de lo nuevo, router.refresh al llegar una; la invitación enlaza a /organizaciones#invitaciones), AppNavbar (h-16/lg:h-20; saludo truncado, subtítulo solo sm+), SignOutButton
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
-                            MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar), TransferOwnership (solo dueño: elegir miembro, escribir el nombre para confirmar; junto a la zona de peligro en Miembros)
+                            MyInvitations (en /organizaciones#invitaciones: invitaciones a mi correo con Aceptar/Rechazar), MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar), TransferOwnership (solo dueño: elegir miembro, escribir el nombre para confirmar; junto a la zona de peligro en Miembros)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
                             OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking (ranking del mes con flechas ?mes=, sin meses futuros), RejectTaskDialog (nota opcional), ChooseReviewerDialog (elegir dueño/admin que revisa una tarea tomada de la bolsa), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; si el servidor responde needsReviewer abre ChooseReviewerDialog; devuelve `reviewerDialog` para esparcirlo en el diálogo; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
@@ -107,12 +108,12 @@ src/lib/dates.ts            APP_TIME_ZONE, dayKey, startOfDayInZone (medianoche 
 src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
 src/lib/data/org-board.ts   getOrgBoard(orgId, members, mes): tareas (OrgTaskDTO) + ranking por XP ganada en la org en ese mes (completedAt en APP_TIME_ZONE); getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100); getDashboardOrgTasks(userId, n): { active, completed (últimas n), completedTotal }, con organización y canReview
-src/lib/data/organizations.ts getMyOrganizations, getSidebarOrganizations(userId) (atajos del menú: { id, name, slug, attention } = mis pendientes + revisiones que me pidieron siendo dueño/admin; lo carga el layout del dashboard), getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
+src/lib/data/organizations.ts getMyOrganizations, getMyPendingInvitations(userId) (a mi correo, vigentes, de orgs donde no estoy), getSidebarOrganizations(userId) (atajos del menú: { id, name, slug, attention } = mis pendientes + revisiones que me pidieron siendo dueño/admin; lo carga el layout del dashboard), getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug, createJoinCode (8 chars, sin sesgo)
 src/lib/organizations/join-code.ts   JOIN_CODE_ALPHABET (sin 0/O/1/I/L), JOIN_CODE_LENGTH, formatJoinCode ("ABCD-2345"); puro, se puede importar en cliente
 src/lib/validations/organization.ts  createOrganizationSchema, inviteMemberSchema, invitationTokenSchema, idSchema, joinCodeSchema/joinOrganizationSchema (mayúsculas, quita espacios y guion)
-src/lib/notifications/server.ts  notifyReview(tx, …) (crea y conserva las 50 más recientes), getNotificationFeed(userId) (20 + no leídas), NotificationDTO
+src/lib/notifications/server.ts  notifyReview(tx, …) (crea y conserva las 50 más recientes), getNotificationSignature(userId) (más reciente:no leídas:total; barata, la usa el stream), getNotificationFeed(userId) (20 + no leídas), NotificationDTO
 src/lib/notifications/messages.ts notificationText (título/descripción en español), timeAgo (puro)
 src/lib/rate-limit.ts       hit(key, regla) (ventana fija, un upsert atómico), isLimited, clearHits, retryAfterLabel, clientIp(headers); reglas LOGIN_ACCOUNT/LOGIN_IP/REGISTER_IP/INVITE_USER/JOIN_CODE_USER
 src/lib/rate-limit-messages.ts LOGIN_RATE_LIMITED (importable en cliente)
@@ -161,7 +162,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/historial` | `src/app/(dashboard)/historial/page.tsx` | Protegida; `?filtro=` y `?antes=` |
 | `/configuracion` | `src/app/(dashboard)/configuracion/page.tsx` | Protegida; botón de engrane del navbar |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
-| `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
+| `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida; muestra «Invitaciones para ti» (#invitaciones) si hay |
 | `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking mensual; `?mes=YYYY-MM` (futuro → mes actual) |
 | `/organizaciones/[slug]/miembros` | `src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx` | Protegida; solo miembros |
 | `/invitaciones/[token]` | `src/app/invitaciones/[token]/page.tsx` | Pública (el proxy la deja pasar sin sesión) |
@@ -169,6 +170,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/auth/register` | `src/app/auth/register/page.tsx` | Funcional |
 | `/auth/recuperar` | `src/app/auth/recuperar/page.tsx` | Pública (sin sesión) |
 | `/auth/restablecer/[token]` | `src/app/auth/restablecer/[token]/page.tsx` | Pública (sin sesión) |
+| `/api/notifications/stream` | `src/app/api/notifications/stream/route.ts` | GET: Server-Sent Events de la campana (401 sin sesión) |
 | `/api/session/expired` | `src/app/api/session/expired/route.ts` | GET: limpia cookie de sesión revocada |
 | `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | NextAuth |
 
@@ -209,6 +211,7 @@ Menú lateral: Dashboard, Misiones, Logros, Organizaciones, Calendario, Estadís
 | `reopenOrgTask(id)` | idem | OWNER/ADMIN. Vuelve a pendiente con el mismo responsable, limpia revisión y descuenta awardedXp a quien la completó |
 | `fetchNotifications()` / `markNotificationsRead()` | `src/app/actions/notifications.ts` | Feed del usuario de la sesión / marca todas como leídas (solo las suyas) |
 | `acceptInvitation(token)` | `src/app/actions/invitations.ts` | Requiere sesión; el correo de la BD debe ser el invitado. Marca usada con update condicional (un solo uso aunque haya peticiones en paralelo) |
+| `acceptMyInvitation(id)` / `declineMyInvitation(id)` | idem | Desde /organizaciones, sin el enlace: solo invitaciones vigentes a mi correo (leído de la BD). Aceptar comparte la lógica de acceptInvitation; rechazar borra la invitación (su enlace deja de servir) |
 | `acceptInvitationWithSignup(token, profile)` | idem | Sin sesión: crea cuenta con el correo invitado + membresía en una transacción; el cliente hace signIn después |
 | NextAuth `/api/auth/*` | `src/app/api/auth/[...nextauth]/route.ts` | Login con Credentials (`identifier` = correo si contiene "@", si no usuario; minúsculas), sesión JWT 30 días con username y firstName. Límite: 30 intentos/15 min por IP y 5 fallos/15 min por cuenta (clave = id del usuario o el identificador si no existe; un acierto limpia). Bloqueado → lanza `RateLimited` y el formulario muestra "Demasiados intentos" |
 
@@ -232,7 +235,7 @@ Migraciones aplicadas: `20261026154201_init`, `20261026184433_daily_missions_ach
 | RateLimit | key (PK, p. ej. "login:account:<userId>"), count, resetAt (timestamptz) | Contadores de ventana fija; las vencidas se borran al azar (2 % de los hits). Las pruebas la truncan |
 | Invitation | id, email (minúsculas), role, tokenHash (unique, SHA-256), expiresAt, acceptedAt?, organizationId, invitedById? | Revocar = borrar; invitar de nuevo reemplaza la pendiente |
 
-Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED/ORG_TASK_SUBMITTED/ORG_OWNERSHIP_TRANSFERRED (taskTitle = nombre de la organización) · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
+Enums: `NotificationType` ORG_TASK_APPROVED/ORG_TASK_CHANGES_REQUESTED/ORG_TASK_RESCHEDULED/ORG_TASK_SUBMITTED/ORG_OWNERSHIP_TRANSFERRED/ORG_INVITATION_RECEIVED (taskTitle = nombre de la organización)/ORG_TASK_ASSIGNED · `OrgRole` OWNER/ADMIN/MEMBER (UI: Dueño/Admin/Miembro) · `Difficulty` EASY/MEDIUM/HARD/EPIC (UI: Fácil/Media/Difícil/Épica) · `TaskStatus` PENDING/COMPLETED · `DailyMissionType` COMPLETE_TASKS/COMPLETE_HARD/COMPLETE_ON_TIME/COMPLETE_VARIETY.
 
 Reglas de XP: Fácil 10 · Media 25 · Difícil 50 · Épica 100. XP acumulada para nivel n = 50·n·(n−1) → 0, 100, 300, 600, 1000…
 Títulos: Novato (1–2), Aprendiz (3–4), Aventurero (5–9), Veterano (10–14), Héroe (15–19), Leyenda (20+).
@@ -295,6 +298,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Tiempo real con Server-Sent Events y revisión periódica en el servidor (firma barata cada 2,5 s por conexión), no con LISTEN/NOTIFY ni un servicio externo: no requiere conexiones persistentes a Postgres ni llaves, y funciona igual en local y en serverless (el stream dura 4 min y el navegador reconecta). Costo: 3 consultas indexadas por pestaña visible cada 2,5 s; suficiente para el tamaño del proyecto. Asignar notifica a quien recibe la tarea (no al asignarse uno mismo ni al editar sin cambiar responsable). Invitar notifica solo si el correo ya tiene cuenta; el aviso no contiene el enlace (el token sigue sin guardarse), lleva a la lista de invitaciones.
 - 2026-11-03: Transferir propiedad: el dueño anterior queda como ADMIN (no MEMBER ni fuera) para no perder acceso de golpe; si quiere irse, sale después. Se confirma escribiendo el nombre de la organización porque no se puede deshacer sin el nuevo dueño. Avisa al nuevo dueño con una notificación (reusa taskTitle para el nombre de la organización en vez de agregar columna). Solo se elige entre miembros actuales.
 - 2026-11-03: Atajos a organizaciones en el menú lateral (propuesta para usuario casual, aprobada por el usuario): lista bajo "Organizaciones" con un contador de lo que espera al usuario (sus tareas pendientes + revisiones que le pidieron). Se eligió el menú (no el dashboard ni el navbar) porque está en todas las páginas y en el menú móvil. Se calcula en cada carga del layout (2 groupBy + memberships).
 - 2026-11-03: Arrastre táctil propio con Pointer Events (sin librería): solo para pointerType "touch"; el mouse sigue con DnD nativo de HTML5. Se activa con pulsación larga para no robarle el scroll a la página; una vez activo, un touchmove no pasivo bloquea el scroll y el auto-scroll en los bordes permite llegar a días fuera de pantalla. La tarjeta flotante se mueve con style.transform (sin re-render por movimiento). Tras soltar se cancela el clic para que las tareas de equipo (enlaces) no naveguen. La pista de arrastre cambia según `pointer-fine`/`pointer-coarse`.
@@ -325,7 +329,8 @@ En curso — organizaciones (idea del usuario 2026-10-26)
 - [ ] Ranking: mostrar al ganador del mes anterior o un histórico total (opcional).
 - [x] Avisar al miembro cuando su tarea se aprueba o se devuelve (campana + toast).
 - [x] Avisar al dueño/admin cuando le envían una tarea a revisión (el que la asignó o el elegido).
-- [ ] Notificaciones en tiempo real (hoy sondeo cada 30 s) y otros tipos (asignación, invitación).
+- [x] Notificaciones en tiempo real (SSE, respaldo por sondeo) y avisos de asignación e invitación (aceptar/rechazar desde Organizaciones).
+- [ ] Notificaciones: si hay muchos usuarios conectados, cambiar la revisión cada 2,5 s por LISTEN/NOTIFY de Postgres o un servicio de pub/sub.
 - [ ] Decidir si las tareas de organización cuentan para misiones diarias y racha.
 
 Prioridad 1 — entorno
@@ -375,6 +380,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/realtime-notifications` (sobre `main`): campana en tiempo real (SSE), avisos de asignación e invitación, aceptar/rechazar invitaciones en /organizaciones, migración `notification_assigned_invited`. 307 pruebas pasan, build OK.
 - 2026-11-03: `feat/org-transfer-ownership` (fast-forward) y `feat/calendar-touch-drag` (merge commit, ambas salían de `main`) fusionadas a `main` con permiso del usuario, que las probó (incluido el arrastre en dispositivo táctil).
 - 2026-11-03: Rama `feat/calendar-touch-drag` (sobre `main`): arrastre táctil en el calendario (mes y semana) con pulsación larga, tarjeta flotante y auto-scroll. 288 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/org-transfer-ownership` (sobre `main`): transferir la propiedad de una organización desde Miembros, aviso al nuevo dueño, migración `org_ownership_transferred`. 292 pruebas pasan, build OK.

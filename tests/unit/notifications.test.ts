@@ -54,6 +54,22 @@ describe("notificationText for ownership", () => {
   });
 });
 
+describe("notificationText for assignments and invitations", () => {
+  it("tells the member who gave them the task", () => {
+    expect(notificationText({ ...base, type: "ORG_TASK_ASSIGNED" })).toEqual({
+      title: "Nueva tarea para ti",
+      description: "Lucía te asignó “Revisar portada”.",
+    });
+  });
+
+  it("names the organization they were invited to", () => {
+    expect(notificationText({ ...base, type: "ORG_INVITATION_RECEIVED", taskTitle: "Equipo Alfa" })).toEqual({
+      title: "Te invitaron a un equipo",
+      description: "Lucía te invitó a “Equipo Alfa”. Acéptala en Organizaciones.",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-10-28T12:00:00Z");
   it.each([
