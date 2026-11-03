@@ -35,7 +35,7 @@ export default function TaskFormSheet({ open, onOpenChange, task, formKey, defau
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full gap-0 border-slate-800 bg-slate-950 text-slate-100 data-[side=right]:sm:max-w-md"
+        className="w-full gap-0 bg-background text-foreground data-[side=right]:sm:max-w-md"
       >
         <SheetHeader className="border-b border-slate-800 p-6">
           <SheetTitle className="text-lg font-bold text-slate-50">

@@ -24,7 +24,7 @@ export default function MobileNav({ organizations }: { organizations: SidebarOrg
       <SheetContent
         side="left"
         showCloseButton={false}
-        className="w-72 gap-0 overflow-y-auto border-slate-800 bg-slate-950 p-6 text-base text-slate-100"
+        className="w-72 gap-0 overflow-y-auto bg-background p-6 text-base text-foreground"
       >
         <div className="mb-8 flex items-center justify-between gap-3">
           <SheetTitle className="text-2xl font-bold text-slate-50">⚔️ TaskQuest</SheetTitle>

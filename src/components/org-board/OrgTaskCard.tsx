@@ -126,19 +126,19 @@ export default function OrgTaskCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="w-44 rounded-xl border border-slate-800 bg-slate-900 p-1 text-slate-200 ring-0"
+                className="w-44 rounded-xl p-1"
               >
                 {completed ? (
                   <DropdownMenuItem
                     onClick={() => onAction("reopen", task)}
-                    className="rounded-lg text-sm focus:bg-slate-800 focus:text-slate-50"
+                    className="rounded-lg text-sm"
                   >
                     <RotateCcw /> Reabrir
                   </DropdownMenuItem>
                 ) : pendingTask ? (
                   <DropdownMenuItem
                     onClick={() => onAction("edit", task)}
-                    className="rounded-lg text-sm focus:bg-slate-800 focus:text-slate-50"
+                    className="rounded-lg text-sm"
                   >
                     <Pencil /> Editar
                   </DropdownMenuItem>
@@ -146,7 +146,7 @@ export default function OrgTaskCard({
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={() => onAction("delete", task)}
-                  className="rounded-lg text-sm text-rose-400 focus:bg-rose-500/10 focus:text-rose-300"
+                  className="rounded-lg text-sm"
                 >
                   <Trash2 /> Eliminar
                 </DropdownMenuItem>

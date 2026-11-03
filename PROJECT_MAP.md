@@ -6,7 +6,7 @@ Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logr
 
 ## Stack
 Next.js 16.2.9 full-stack (App Router, React Compiler activo) · React 19.2.4 · TypeScript `strict` ·
-Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI, iconos Phosphor) + Lucide en componentes propios ·
+Tailwind v4 (config CSS-first en `globals.css`) · shadcn/ui estilo `base-lyra` (Base UI) · Lucide como única librería de iconos (`components.json` iconLibrary: lucide) ·
 Prisma 7.8 + `@prisma/adapter-pg` · NextAuth v4 (Credentials + JWT) · bcryptjs · zod 4 · nodemailer 10 · Motion (`motion/react`) · Sonner · PostgreSQL (local).
 Tests: Vitest 3 (Vitest 5 exige Node 22; aquí se usa Node 20.19).
 
@@ -33,7 +33,7 @@ Gestor único: **pnpm** (`pnpm-lock.yaml`). `pnpm-workspace.yaml` → `allowBuil
 
 ## Estructura
 ```
-src/app/layout.tsx          layout raíz (fuentes, metadata TaskQuest, lang="es")
+src/app/layout.tsx          layout raíz (solo JetBrains Mono → --font-mono; <html class="dark">; metadata TaskQuest, lang="es")
 src/app/(dashboard)/layout.tsx   shell (sidebar + navbar) con requireUser() y getNotificationFeed()
 src/app/(dashboard)/page.tsx     dashboard "/": ProgressHero (nivel + estadísticas), misiones diarias, "Próximas fechas" (UpcomingDeadlines) y "Resumen de tareas" (TaskSummary: En curso | Completadas, personales + equipo asignadas a mí)
 src/app/(dashboard)/misiones/page.tsx  /misiones: lista completa de misiones personales (TaskList con búsqueda y filtro por dificultad) + "Tareas de organizaciones" (OrgTasksSection)
@@ -57,7 +57,7 @@ src/app/invitaciones/[token]/page.tsx  aceptar invitación (pública; con o sin 
 src/app/actions/organizations.ts  createOrganization, inviteMember, revokeInvitation, changeMemberRole, removeMember, leaveOrganization, deleteOrganization, regenerateJoinCode, disableJoinCode, joinOrganizationByCode
 src/app/actions/invitations.ts    acceptInvitation (con sesión), acceptInvitationWithSignup (crea cuenta + membresía)
 src/app/actions/tasks.ts    Server Actions de misiones: createTask, updateTask, rescheduleTask, setTaskCompleted, deleteTask
-src/app/globals.css         Tailwind v4 + tokens shadcn (tema claro; .dark no se aplica)
+src/app/globals.css         Tailwind v4 + tokens shadcn = paleta real de la app (background slate-950, card/popover slate-900, primary violet-600, border slate-800, input slate-600, ring violet-500, destructive rose-400, charts violeta/cielo/esmeralda/ámbar/rosa) con color-scheme dark
 src/app/auth/layout.tsx     layout de login/registro → usa AuthShell
 src/app/auth/login/page.tsx     /auth/login (sanea ?callbackUrl; avisos ?registered=1, ?restablecida=1, ?expirada=1)
 src/app/auth/recuperar/page.tsx /auth/recuperar: pedir enlace (ForgotPasswordForm; misma respuesta exista o no la cuenta)
@@ -262,7 +262,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 ## Convenciones
 - Componentes con `export default`, props tipadas con `interface`.
 - UI en español; código en inglés. Dificultades: `Fácil | Media | Difícil | Épica`.
-- Estilos con clases `slate-*` directas (pendiente migrar a tokens).
+- Los tokens de shadcn ya son la paleta de la app: los componentes de `components/ui` no necesitan clases de color al usarse. El código propio todavía usa clases `slate-*`/`violet-*` directas (mismos colores); el código nuevo puede usar tokens (`bg-background`, `bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`…).
 
 ## Decisiones y por qué
 - 2026-10-23: Mantener Next.js full-stack + Prisma (lo existente) en vez del monorepo Laravel; el backend estaba vacío y es coherente para portafolio.
@@ -364,17 +364,19 @@ Prioridad 2 — funcionalidad
 Prioridad 3 — UX
 - [x] Navegación del sidebar con `<Link>`.
 - [x] Responsive en móvil: menú lateral en Sheet bajo lg, navbar compacto, márgenes menores, filtros y barras de herramientas que se envuelven.
-- [ ] Tema oscuro coherente con tokens; una sola librería de iconos.
+- [x] Tema oscuro coherente con tokens; una sola librería de iconos (Lucide; se quitó @phosphor-icons/react).
+- [ ] Migrar las clases `slate-*` del código propio a tokens (opcional: hoy coinciden en color).
 - [x] `aria-label` en botones de icono del navbar; metadata y `lang="es"`.
-- [ ] Quitar fuentes sin uso en `layout.tsx`.
+- [x] Quitar fuentes sin uso en `layout.tsx` (Geist y Geist Mono).
 - [x] Motion (con `useReducedMotion`) y Sonner en misiones.
-- [ ] Los componentes shadcn usan tokens de tema claro; se sobreescriben con clases slate en cada uso.
+- [x] Los componentes shadcn usan los tokens oscuros; se quitaron las sobreescrituras de color en dropdowns, sheets, checkbox, card, avatar y toasts.
 
 Prioridad 4 — estabilidad
 - [x] Tests unitarios y de integración en el repo (Vitest).
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `chore/visual-debt` (sobre `main`): una sola librería de iconos (Lucide), solo JetBrains Mono, tokens shadcn con la paleta oscura real y `dark` fijo en <html>; se quitaron sobreescrituras de color. 296 pruebas pasan, build OK.
 - 2026-11-03: `feat/org-transfer-ownership` (fast-forward) y `feat/calendar-touch-drag` (merge commit, ambas salían de `main`) fusionadas a `main` con permiso del usuario, que las probó (incluido el arrastre en dispositivo táctil).
 - 2026-11-03: Rama `feat/calendar-touch-drag` (sobre `main`): arrastre táctil en el calendario (mes y semana) con pulsación larga, tarjeta flotante y auto-scroll. 288 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/org-transfer-ownership` (sobre `main`): transferir la propiedad de una organización desde Miembros, aviso al nuevo dueño, migración `org_ownership_transferred`. 292 pruebas pasan, build OK.

@@ -87,7 +87,7 @@ export function PersonalRow({
         checked={completed}
         onCheckedChange={(checked) => onToggle(task, checked)}
         aria-label={completed ? `Marcar "${task.title}" como pendiente` : `Completar "${task.title}"`}
-        className="mt-0.5 size-5 rounded-md border-slate-600 text-white data-checked:border-violet-600 data-checked:bg-violet-600"
+        className="mt-0.5 size-5 rounded-md"
       />
       <div className="min-w-0 flex-1">
         <p className={cn("text-sm font-medium break-words", completed ? "text-slate-500 line-through" : "text-slate-100")}>

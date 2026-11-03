@@ -52,8 +52,8 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
   return (
     <Card
       className={cn(
-        "relative overflow-hidden border-slate-800 bg-slate-900 transition-[border-color,opacity] duration-200",
-        completed ? "opacity-70" : "hover:border-slate-700",
+        "relative overflow-hidden transition-[box-shadow,opacity] duration-200",
+        completed ? "opacity-70" : "hover:ring-foreground/20",
       )}
     >
       <div className={cn("absolute top-0 left-0 h-full w-1", completed ? "bg-slate-700" : style.color)} />
@@ -64,7 +64,7 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
             checked={completed}
             onCheckedChange={(checked) => onToggle(task, checked)} 
             aria-label={completed ? `Marcar "${task.title}" como pendiente` : `Completar "${task.title}"`}
-            className="mt-1 size-5 rounded-md border-slate-600 text-white data-checked:border-violet-600 data-checked:bg-violet-600"
+            className="mt-1 size-5 rounded-md"
           />
 
           <div className="min-w-0 flex-1 space-y-2">
@@ -95,18 +95,18 @@ export default function TaskCard({ task, onToggle, onEdit, onDelete }: TaskCardP
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-40 rounded-xl border border-slate-800 bg-slate-900 p-1 text-slate-200 ring-0"
+              className="w-40 rounded-xl p-1"
             >
               <DropdownMenuItem
                 onClick={() => onEdit(task)}
-                className="rounded-lg text-sm focus:bg-slate-800 focus:text-slate-50"
+                className="rounded-lg text-sm"
               >
                 <Pencil /> Editar
               </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 onClick={() => onDelete(task)}
-                className="rounded-lg text-sm text-rose-400 focus:bg-rose-500/10 focus:text-rose-300"
+                className="rounded-lg text-sm"
               >
                 <Trash2 /> Eliminar
               </DropdownMenuItem>

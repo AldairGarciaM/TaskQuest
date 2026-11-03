@@ -63,7 +63,7 @@ export default function ProgressHero({
                 src={`https://api.dicebear.com/10.x/bottts/svg?seed=${encodeURIComponent(userId)}`}
                 alt=""
               />
-              <AvatarFallback className="bg-slate-800 text-2xl font-semibold text-slate-200">{initials}</AvatarFallback>
+              <AvatarFallback className="text-2xl font-semibold text-slate-200">{initials}</AvatarFallback>
             </Avatar>
           }
         />
