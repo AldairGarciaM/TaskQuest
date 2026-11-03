@@ -10,9 +10,13 @@ import {
   monthParam,
   parseDayParam,
   parseMonthParam,
+  parseViewParam,
   relativeDayLabel,
   shiftMonth,
+  startOfWeek,
+  weekDays,
   weekdayLabel,
+  weekLabel,
 } from "@/lib/calendar";
 
 describe("parseMonthParam", () => {
@@ -48,6 +52,39 @@ describe("monthBounds", () => {
     const { start, end } = monthBounds({ year: 2026, month: 12 });
     expect(start.toISOString()).toBe("2026-12-01T06:00:00.000Z");
     expect(end.toISOString()).toBe("2027-01-01T06:00:00.000Z");
+  });
+});
+
+describe("weeks", () => {
+  it("finds the Monday of any day's week", () => {
+    expect(startOfWeek("2026-11-03")).toBe("2026-11-02"); // Tuesday
+    expect(startOfWeek("2026-11-02")).toBe("2026-11-02"); // Monday
+    expect(startOfWeek("2026-11-08")).toBe("2026-11-02"); // Sunday
+    expect(startOfWeek("2027-01-01")).toBe("2026-12-28"); // across years
+  });
+
+  it("lists the seven days from Monday", () => {
+    expect(weekDays("2026-10-26")).toEqual([
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+    ]);
+  });
+
+  it("labels the week by its range", () => {
+    expect(weekLabel("2026-11-02")).toBe("2 – 8 de noviembre de 2026");
+    expect(weekLabel("2026-10-26")).toBe("26 de octubre – 1 de noviembre de 2026");
+    expect(weekLabel("2026-12-28")).toBe("28 de diciembre de 2026 – 3 de enero de 2027");
+  });
+
+  it("reads the view from ?vista=", () => {
+    expect(parseViewParam("semana")).toBe("week");
+    expect(parseViewParam(undefined)).toBe("month");
+    expect(parseViewParam(["semana"])).toBe("month");
   });
 });
 

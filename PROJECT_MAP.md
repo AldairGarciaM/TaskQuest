@@ -78,7 +78,7 @@ src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mí
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
-src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; arrastrar misiones pendientes y tareas de equipo con `canReschedule` (chips de la celda o filas del panel, HTML5 DnD, sm+) a otro día con UI optimista y toast con Deshacer; botón lápiz por fila abre TaskFormSheet para editar o cambiar fecha (alternativa en móvil/teclado). La celda es un div (drop target) con el botón de selección absoluto debajo y los chips encima; Motion)
+src/components/calendar/    CalendarView (cuadrícula lunes-primero, flechas/Home/End con roving tabindex, chips por día, puntos en móvil, panel del día con completar misión, crear misión con la fecha elegida, tareas de equipo enlazan al tablero y dicen "Asignada a …" / "Realizada por …" / "Libre"; arrastrar misiones pendientes y tareas de equipo con `canReschedule` (chips de la celda o filas del panel, HTML5 DnD, sm+) a otro día con UI optimista y toast con Deshacer; botón lápiz por fila abre TaskFormSheet para editar o cambiar fecha (alternativa en móvil/teclado). La celda es un div (drop target) con el botón de selección absoluto debajo y los chips encima; Motion; exporta CalendarSummary (conteos, leyenda, pista de arrastre), WeekView (agenda de 7 días: cada día es drop target con todas sus filas, botón + para crear con esa fecha, "Hoy" resaltado, vencidas por día; Motion), useCalendarTasks (estado optimista, byDay, completar, mover con Deshacer, arrastre `dropTarget(key)`, formulario; compartido por mes y semana), entries.tsx (Entry, isDone/isPending/isMovable, PersonalRow, OrgRow, EntryRow)
 src/components/stats/       ColumnChart (columnas simples o apiladas: leyenda, tooltip por hover/foco, etiqueta solo en el pico, "Ver como tabla"), chart-utils (niceMax, compact, SERIES_COLORS validados)
 src/components/dashboard/   UpcomingDeadlines (server: franja de 7 días con conteo → /calendario?dia=, aviso de vencidas, agenda por día máx. 8 filas)
 src/components/calendar/ownership.ts  ownership()/personName(): "Asignada a …", "Realizada por …", "Libre" (calendario y dashboard)
@@ -98,8 +98,8 @@ src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profile
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados; `exceptUserId` ignora la propia cuenta), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
-src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthBounds (inicio/fin del mes en APP_TIME_ZONE como instantes), monthLabel, dayLabel (puro)
-src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha; getUpcomingDeadlines(userId, hoy, 7): pendientes (y de equipo en revisión) de hoy a +6 días + vencidas; visibleOrgTasks() = filtro compartido mías/gerente
+src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthBounds (inicio/fin del mes en APP_TIME_ZONE como instantes), startOfWeek, weekDays, weekLabel ("2 – 8 de noviembre de 2026"), parseViewParam (?vista=semana), monthLabel, dayLabel (puro)
+src/lib/data/calendar.ts    getCalendarMonth(userId, mes) → getCalendarRange(userId, {from, to}) (mes o semana): misiones con fecha en el rango, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha; getUpcomingDeadlines(userId, hoy, 7): pendientes (y de equipo en revisión) de hoy a +6 días + vencidas; visibleOrgTasks() = filtro compartido mías/gerente
 src/lib/stats.ts            STAT_RANGES, parseRangeParam, summarize(eventos, rango, hoy) → buckets diarios (≤30) o semanales (90), longestStreak, percentChange (puro)
 src/lib/data/stats.ts       getStats(userId, rango, hoy): eventos de XP (misiones, tareas de equipo que completé, bonos diarios) del doble del rango + rachas
 src/lib/data/history.ts     getHistory(userId, {filter, before, limit=30}): misiones completadas, tareas de equipo que completé (aprobada por …), bonos diarios y logros, más reciente primero; cursor por instante sin partir empates; parseHistoryFilter, parseCursor
@@ -156,7 +156,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 |---|---|---|
 | `/` | `src/app/(dashboard)/page.tsx` | Protegida; datos reales, misiones diarias, loading y error |
 | `/misiones` | `src/app/(dashboard)/misiones/page.tsx` | Protegida; misiones personales + de equipo |
-| `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; `?mes=YYYY-MM` |
+| `/calendario` | `src/app/(dashboard)/calendario/page.tsx` | Protegida; mes: `?mes=YYYY-MM` (`?dia=` abre ese día); semana: `?vista=semana&semana=YYYY-MM-DD` (cualquier día de la semana; sin él, la actual). Selector Mes/Semana conserva el contexto |
 | `/estadisticas` | `src/app/(dashboard)/estadisticas/page.tsx` | Protegida; `?rango=7|30|90` (30 por defecto) |
 | `/historial` | `src/app/(dashboard)/historial/page.tsx` | Protegida; `?filtro=` y `?antes=` |
 | `/configuracion` | `src/app/(dashboard)/configuracion/page.tsx` | Protegida; botón de engrane del navbar |
@@ -294,6 +294,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Vista semanal como agenda (un día por fila con todas sus tareas) en lugar de 7 columnas: las filas completas no caben en columnas de ~140 px y la agenda funciona igual en teléfono. Sin panel lateral: completar, editar, crear (+ por día) y arrastrar se hacen en la misma fila. La vista va en la URL (no se recuerda la última elegida).
 - 2026-11-03: Revisión dirigida (decisión del usuario): una tarea asignada por un dueño/admin se envía a revisión a esa persona y solo ella recibe el aviso; si ya no es dueño/admin (o salió), el miembro elige. Las tomadas de la bolsa piden elegir dueño/admin al entregar. Cualquier dueño/admin puede seguir aprobando o devolviendo (por si el revisor no está); la tarjeta muestra "Revisa X" / "Te toca revisar". El backfill asigna assignedById = createdById en tareas asignadas existentes.
 - 2026-11-03: Ranking mensual (decisión del usuario): cuenta tareas aprobadas (completedAt) dentro del mes en hora de Ciudad de México. Reemplaza al histórico. Se puede ver meses anteriores con `?mes=`; los futuros redirigen al actual. Reabrir una tarea la quita del mes en que se aprobó.
 
@@ -351,7 +352,8 @@ Prioridad 2 — funcionalidad
 - [x] Calendario: arrastrar misiones personales para cambiar la fecha.
 - [x] Unirse a una organización con código (además de la invitación por correo).
 - [x] Calendario: dueños/admins arrastran tareas de equipo pendientes; el asignado recibe aviso.
-- [ ] Calendario: vista semanal; arrastre táctil (hoy en móvil se usa el lápiz → formulario).
+- [x] Calendario: vista semanal (agenda).
+- [ ] Calendario: arrastre táctil (hoy en móvil se usa el lápiz → formulario); recordar la última vista elegida.
 - [ ] Pruebas de integración dependen de la hora real: si cruzan la medianoche de Ciudad de México podrían fallar (bajo riesgo).
 
 Prioridad 3 — UX
@@ -368,6 +370,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/calendar-week` (sobre `main`): vista semanal del calendario tipo agenda, selector Mes/Semana en la URL; lógica del calendario extraída a useCalendarTasks y entries.tsx (la vista mensual se comporta igual). 283 pruebas pasan, build OK.
 - 2026-11-03: `feat/org-ranking-monthly` y `feat/org-task-reviewer` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó.
 - 2026-11-03: Rama `feat/org-task-reviewer` (sobre `feat/org-ranking-monthly`): aviso al gerente que asignó la tarea cuando se envía a revisión; elegir revisor en tareas libres; migración `org_task_reviewer` (assignedById, requestedReviewerId, ORG_TASK_SUBMITTED). 278 pruebas pasan, build OK.
 - 2026-11-03: Rama `feat/org-ranking-monthly` (sobre `main`): ranking de la organización por mes con flechas, `startOfDayInZone` y `monthBounds`. 274 pruebas pasan, build OK.

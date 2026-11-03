@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getCalendarMonth, getUpcomingDeadlines } from "@/lib/data/calendar";
+import { getCalendarMonth, getCalendarRange, getUpcomingDeadlines } from "@/lib/data/calendar";
 import { dueDateFromInput } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 
@@ -21,6 +21,22 @@ async function task(userId: string, title: string, dueDate: string | null, statu
     },
   });
 }
+
+describe("getCalendarRange", () => {
+  it("returns only what's due within the week, both ends included", async () => {
+    const me = await createUser();
+    await task(me.id, "Domingo anterior", "2026-11-01");
+    await task(me.id, "Lunes", "2026-11-02");
+    await task(me.id, "Domingo", "2026-11-08", "COMPLETED");
+    await task(me.id, "Lunes siguiente", "2026-11-09");
+
+    const week = await getCalendarRange(me.id, { from: "2026-11-02", to: "2026-11-08" });
+    expect(week.tasks.map((t) => [t.title, t.dueDate])).toEqual([
+      ["Lunes", "2026-11-02"],
+      ["Domingo", "2026-11-08"],
+    ]);
+  });
+});
 
 describe("getCalendarMonth", () => {
   it("returns my personal tasks due on the visible weeks, with the trailing days of the grid", async () => {

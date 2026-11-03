@@ -31,7 +31,7 @@ export interface CalendarOrgTask {
 }
 
 export interface CalendarMonth {
-  /** Personal tasks due on a day of the visible grid. */
+  /** Personal tasks due on a visible day (month grid or week). */
   tasks: (TaskDTO & { dueDate: string })[];
   /** `canReschedule`: I manage its organization and it is still pending, so I can drag it. */
   orgTasks: (CalendarOrgTask & { canReschedule: boolean })[];
@@ -84,8 +84,13 @@ function toCalendarOrgTask(task: Prisma.OrgTaskGetPayload<{ select: typeof orgTa
   };
 }
 
-export async function getCalendarMonth(userId: string, ym: YearMonth): Promise<CalendarMonth> {
-  const { from, to } = gridRange(ym);
+/** Everything due on the visible month grid. */
+export function getCalendarMonth(userId: string, ym: YearMonth): Promise<CalendarMonth> {
+  return getCalendarRange(userId, gridRange(ym));
+}
+
+/** Everything due from `from` to `to` ("YYYY-MM-DD", inclusive): a month grid or a week. */
+export async function getCalendarRange(userId: string, { from, to }: { from: string; to: string }): Promise<CalendarMonth> {
   const dueDate = { gte: dueDateFromInput(from), lte: dueDateFromInput(to) };
 
   const [tasks, orgTasks, undatedPending, managed] = await Promise.all([

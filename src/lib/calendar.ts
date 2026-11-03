@@ -76,6 +76,24 @@ export function parseDayParam(param: string | string[] | undefined): string | nu
   return !Number.isNaN(date.getTime()) && utcKey(date) === param ? param : null;
 }
 
+/** Monday of the week (Monday first) that contains `key`. */
+export function startOfWeek(key: string): string {
+  const weekday = (new Date(`${key}T00:00:00.000Z`).getUTCDay() + 6) % 7;
+  return addDays(key, -weekday);
+}
+
+/** The seven day keys of the week that starts on `monday`. */
+export function weekDays(monday: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+}
+
+export type CalendarViewMode = "month" | "week";
+
+/** `?vista=semana` shows a week; anything else, the month. */
+export function parseViewParam(param: string | string[] | undefined): CalendarViewMode {
+  return param === "semana" ? "week" : "month";
+}
+
 /** First and last day keys shown by monthGrid, inclusive. */
 export function gridRange(ym: YearMonth): { from: string; to: string } {
   const grid = monthGrid(ym);
@@ -92,6 +110,7 @@ const longDayFormatter = new Intl.DateTimeFormat("es-MX", {
 
 const weekdayFormatter = new Intl.DateTimeFormat("es-MX", { weekday: "short", timeZone: "UTC" });
 const shortMonthFormatter = new Intl.DateTimeFormat("es-MX", { month: "short", timeZone: "UTC" });
+const monthNameFormatter = new Intl.DateTimeFormat("es-MX", { month: "long", timeZone: "UTC" });
 
 /** "mié" */
 export function weekdayLabel(key: string): string {
@@ -110,6 +129,19 @@ export function relativeDayLabel(key: string, today: string): string {
 /** "octubre de 2026" */
 export function monthLabel({ year, month }: YearMonth): string {
   return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+/** "2 – 8 de noviembre de 2026", "27 de octubre – 2 de noviembre de 2026" or across years in full. */
+export function weekLabel(monday: string): string {
+  const start = new Date(`${monday}T00:00:00.000Z`);
+  const end = new Date(`${addDays(monday, 6)}T00:00:00.000Z`);
+  const month = (date: Date) => monthNameFormatter.format(date);
+  if (start.getUTCFullYear() !== end.getUTCFullYear()) {
+    return `${start.getUTCDate()} de ${month(start)} de ${start.getUTCFullYear()} – ${end.getUTCDate()} de ${month(end)} de ${end.getUTCFullYear()}`;
+  }
+  const from =
+    start.getUTCMonth() === end.getUTCMonth() ? `${start.getUTCDate()}` : `${start.getUTCDate()} de ${month(start)}`;
+  return `${from} – ${end.getUTCDate()} de ${month(end)} de ${end.getUTCFullYear()}`;
 }
 
 /** "miércoles, 28 de octubre" */
