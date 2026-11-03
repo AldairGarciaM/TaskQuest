@@ -1,4 +1,4 @@
-import { dayKey } from "@/lib/dates";
+import { dayKey, startOfDayInZone } from "@/lib/dates";
 
 /** A calendar month, 1-based like the "YYYY-MM" in the URL. */
 export interface YearMonth {
@@ -35,6 +35,14 @@ export function monthParam({ year, month }: YearMonth): string {
 export function shiftMonth({ year, month }: YearMonth, delta: number): YearMonth {
   const index = year * 12 + (month - 1) + delta;
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
+}
+
+/** Instants the month starts and ends in APP_TIME_ZONE: [start, end). */
+export function monthBounds(ym: YearMonth): { start: Date; end: Date } {
+  return {
+    start: startOfDayInZone(`${monthParam(ym)}-01`),
+    end: startOfDayInZone(`${monthParam(shiftMonth(ym, 1))}-01`),
+  };
 }
 
 function utcKey(date: Date): string {

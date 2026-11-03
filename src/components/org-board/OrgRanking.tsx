@@ -1,20 +1,72 @@
-import { Trophy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trophy } from "lucide-react";
+import Link from "next/link";
 
+import { monthLabel, monthParam, shiftMonth, type YearMonth } from "@/lib/calendar";
 import type { RankingEntry } from "@/lib/data/org-board";
 import { cn } from "@/lib/utils";
 
 const PODIUM = ["text-yellow-300", "text-slate-300", "text-amber-600"];
 
-export default function OrgRanking({ ranking, myUserId }: { ranking: RankingEntry[]; myUserId: string }) {
+const navClass =
+  "grid size-8 place-items-center rounded-lg border border-slate-800 text-slate-300 transition-[background-color,transform] duration-150 hover:bg-slate-800 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-violet-500/40 focus-visible:outline-none";
+
+interface OrgRankingProps {
+  ranking: RankingEntry[];
+  myUserId: string;
+  month: YearMonth;
+  isCurrentMonth: boolean;
+  /** Board URL the month links append `?mes=` to. */
+  basePath: string;
+}
+
+export default function OrgRanking({ ranking, myUserId, month, isCurrentMonth, basePath }: OrgRankingProps) {
+  const label = monthLabel(month);
+  const nobodyScored = ranking.every((entry) => entry.xp === 0);
+
   return (
     <section aria-labelledby="ranking-heading" className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5">
       <div className="flex items-center gap-2">
         <Trophy size={18} className="text-yellow-300" aria-hidden />
         <h2 id="ranking-heading" className="font-semibold">
-          Ranking
+          Ranking del mes
         </h2>
       </div>
-      <p className="-mt-2 text-xs text-slate-500">XP ganada en tareas de esta organización.</p>
+
+      <nav aria-label="Cambiar el mes del ranking" className="-mt-1 flex items-center gap-2">
+        <Link
+          href={`${basePath}?mes=${monthParam(shiftMonth(month, -1))}`}
+          scroll={false}
+          aria-label="Mes anterior"
+          className={navClass}
+        >
+          <ChevronLeft size={16} aria-hidden />
+        </Link>
+        <p aria-live="polite" className="flex-1 text-center text-sm font-medium text-slate-200 first-letter:uppercase">
+          {label}
+        </p>
+        {isCurrentMonth ? (
+          <span aria-hidden className={cn(navClass, "pointer-events-none opacity-40")}>
+            <ChevronRight size={16} />
+          </span>
+        ) : (
+          <Link
+            href={`${basePath}?mes=${monthParam(shiftMonth(month, 1))}`}
+            scroll={false}
+            aria-label="Mes siguiente"
+            className={navClass}
+          >
+            <ChevronRight size={16} aria-hidden />
+          </Link>
+        )}
+      </nav>
+
+      <p className="-mt-2 text-xs text-slate-500">
+        {nobodyScored
+          ? isCurrentMonth
+            ? "Nadie ha completado tareas este mes todavía. ¡La primera aprobada toma la delantera!"
+            : "Nadie completó tareas este mes."
+          : "XP ganada en tareas de esta organización aprobadas en el mes."}
+      </p>
 
       <ol className="space-y-1">
         {ranking.map((entry, index) => {

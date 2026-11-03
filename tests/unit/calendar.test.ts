@@ -4,6 +4,7 @@ import {
   addDays,
   dayLabel,
   gridRange,
+  monthBounds,
   monthGrid,
   monthLabel,
   monthParam,
@@ -39,6 +40,14 @@ describe("shiftMonth / monthParam", () => {
     expect(shiftMonth({ year: 2026, month: 12 }, 1)).toEqual({ year: 2027, month: 1 });
     expect(shiftMonth({ year: 2026, month: 1 }, -1)).toEqual({ year: 2025, month: 12 });
     expect(monthParam({ year: 2026, month: 3 })).toBe("2026-03");
+  });
+});
+
+describe("monthBounds", () => {
+  it("spans the month in Mexico City time, end exclusive", () => {
+    const { start, end } = monthBounds({ year: 2026, month: 12 });
+    expect(start.toISOString()).toBe("2026-12-01T06:00:00.000Z");
+    expect(end.toISOString()).toBe("2027-01-01T06:00:00.000Z");
   });
 });
 

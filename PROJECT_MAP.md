@@ -74,7 +74,7 @@ src/components/layout/      DashboardLayout (props userName, userId, notificatio
 src/components/organization/ RoleBadge, ConfirmDialog (destructivo genérico), CreateOrganizationForm, InviteMemberForm (muestra/copia enlace), JoinOrganizationForm (/organizaciones: escribir código), JoinCodePanel (pestaña Miembros, solo dueño/admin: activar, copiar, generar otro, desactivar),
                             MemberList (cambiar rol, quitar), PendingInvitations (cancelar), OrganizationDangerZone (salir/eliminar)
 src/components/org-board/   OrgBoard (filtros Pendientes/En revisión/Libres/Mías/Completadas, Motion, toasts, confirmaciones), OrgTaskCard (Tomar/Soltar/Enviar a revisión, Aprobar/Pedir cambios, nota de cambios + menú),
-                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking, RejectTaskDialog (nota opcional), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; tablero y dashboard)
+                            OrgTaskFormSheet (responsable: libre o un miembro), OrgRanking (ranking del mes con flechas ?mes=, sin meses futuros), RejectTaskDialog (nota opcional), useOrgTaskActions (tomar/soltar/entregar/aprobar/devolver + toasts; tablero y dashboard)
 src/components/organization/OrganizationTabs.tsx  pestañas Tablero/Miembros
 src/components/invitation/  AcceptInvitationButton, InvitationSignupForm (correo fijo), SwitchAccountButton
 src/components/gamification/ DailyMissionsCard, AchievementIcon (nombre → icono Lucide)
@@ -98,15 +98,15 @@ src/lib/validations/auth.ts loginSchema (identifier = correo o usuario), profile
 src/lib/user.ts             fullName, takenProfileFields (email/usuario ya usados; `exceptUserId` ignora la propia cuenta), hashPassword (bcrypt 12)
 src/lib/validations/task.ts taskInputSchema, taskIdSchema, orgTaskInputSchema (+ assigneeId opcional)
 src/lib/xp.ts               XP_BY_DIFFICULTY, xpForLevel, levelFromXp, levelProgress, levelTitle, nextLevelTitle (tabla LEVEL_TITLES)
-src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthLabel, dayLabel (puro)
+src/lib/calendar.ts         parseMonthParam (?mes, cae al mes actual en APP_TIME_ZONE), parseDayParam, addDays, weekdayLabel, relativeDayLabel (Hoy/Mañana/"vie 30 oct"), monthParam, shiftMonth, monthGrid (4–6 semanas), gridRange, monthBounds (inicio/fin del mes en APP_TIME_ZONE como instantes), monthLabel, dayLabel (puro)
 src/lib/data/calendar.ts    getCalendarMonth(userId, mes): misiones con fecha en la cuadrícula, tareas de equipo (mías, o todas las de orgs donde soy OWNER/ADMIN) con assignee y completedBy, pendientes sin fecha; getUpcomingDeadlines(userId, hoy, 7): pendientes (y de equipo en revisión) de hoy a +6 días + vencidas; visibleOrgTasks() = filtro compartido mías/gerente
 src/lib/stats.ts            STAT_RANGES, parseRangeParam, summarize(eventos, rango, hoy) → buckets diarios (≤30) o semanales (90), longestStreak, percentChange (puro)
 src/lib/data/stats.ts       getStats(userId, rango, hoy): eventos de XP (misiones, tareas de equipo que completé, bonos diarios) del doble del rango + rachas
 src/lib/data/history.ts     getHistory(userId, {filter, before, limit=30}): misiones completadas, tareas de equipo que completé (aprobada por …), bonos diarios y logros, más reciente primero; cursor por instante sin partir empates; parseHistoryFilter, parseCursor
-src/lib/dates.ts            APP_TIME_ZONE, dayKey, dueDate ↔ input, currentStreak
+src/lib/dates.ts            APP_TIME_ZONE, dayKey, startOfDayInZone (medianoche local → instante UTC), dueDate ↔ input, currentStreak
 src/lib/data/dashboard.ts   getPersonalTasks(userId) (usada por /misiones), getDashboardData(userId) + tipo TaskDTO (incluye dailyMissions y conteo de logros)
 src/lib/data/achievements.ts getAchievements(userId): logros con progreso para /logros
-src/lib/data/org-board.ts   getOrgBoard(orgId, members): tareas (OrgTaskDTO) + ranking por XP ganada en la org; getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100); getDashboardOrgTasks(userId, n): { active, completed (últimas n), completedTotal }, con organización y canReview
+src/lib/data/org-board.ts   getOrgBoard(orgId, members, mes): tareas (OrgTaskDTO) + ranking por XP ganada en la org en ese mes (completedAt en APP_TIME_ZONE); getMyOrgTasks(userId): pendientes mías o libres de mis orgs, agrupadas (máx. 100); getDashboardOrgTasks(userId, n): { active, completed (últimas n), completedTotal }, con organización y canReview
 src/lib/data/organizations.ts getMyOrganizations, getOrganizationForMember(slug, userId) (incluye joinCode formateado solo para dueño/admin), findInvitationByToken
 src/lib/organizations/permissions.ts ROLE_LABELS, ASSIGNABLE_ROLES, MAX_OWNED_ORGANIZATIONS, canInvite/canRemoveMember/canChangeRole/canLeave/... (puro)
 src/lib/organizations/tokens.ts      token de invitación (32 bytes base64url) + hash SHA-256, vencimiento 7 días, invitationUrl, slugify/organizationSlug, createJoinCode (8 chars, sin sesgo)
@@ -162,7 +162,7 @@ tests/integration/          Server Actions y login contra la BD `<db>_test`
 | `/configuracion` | `src/app/(dashboard)/configuracion/page.tsx` | Protegida; botón de engrane del navbar |
 | `/logros` | `src/app/(dashboard)/logros/page.tsx` | Protegida; logros del usuario |
 | `/organizaciones` | `src/app/(dashboard)/organizaciones/page.tsx` | Protegida |
-| `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking |
+| `/organizaciones/[slug]` | `src/app/(dashboard)/organizaciones/[slug]/page.tsx` | Protegida; solo miembros. Tablero + ranking mensual; `?mes=YYYY-MM` (futuro → mes actual) |
 | `/organizaciones/[slug]/miembros` | `src/app/(dashboard)/organizaciones/[slug]/miembros/page.tsx` | Protegida; solo miembros |
 | `/invitaciones/[token]` | `src/app/invitaciones/[token]/page.tsx` | Pública (el proxy la deja pasar sin sesión) |
 | `/auth/login` | `src/app/auth/login/page.tsx` | Funcional |
@@ -293,6 +293,7 @@ Plantilla en `.env.example` (copiar a `.env`):
 - 2026-10-27: Tareas de organización en modelo aparte (OrgTask): suman XP y nivel personal y desbloquean logros de nivel, pero NO cuentan para misiones diarias, racha ni logros de cantidad de tareas personales.
 - 2026-10-27: Reabrir descuenta la XP pagada (igual que descompletar una personal). Quitar a alguien o que salga libera sus tareas pendientes.
 - 2026-10-27: Ranking = XP ganada en tareas de esa organización (histórico), solo miembros actuales.
+- 2026-11-03: Ranking mensual (decisión del usuario): cuenta tareas aprobadas (completedAt) dentro del mes en hora de Ciudad de México. Reemplaza al histórico. Se puede ver meses anteriores con `?mes=`; los futuros redirigen al actual. Reabrir una tarea la quita del mes en que se aprobó.
 
 - 2026-10-27: Dashboard separa "Misiones personales" y "Tareas de organizaciones". La sección de equipo solo muestra pendientes mías o libres (no las de otros ni completadas) y solo permite Tomar/Soltar/Completar; gestionar (crear, editar, reabrir, eliminar) se hace en el tablero. Las acciones de organizaciones, tareas de equipo e invitaciones también revalidan "/".
 
@@ -313,7 +314,8 @@ En curso — organizaciones (idea del usuario 2026-10-26)
 - [ ] Transferir la propiedad de una organización.
 - [x] Límite de invitaciones: 20 por hora por persona (todas sus organizaciones).
 - [x] Tablero de la organización: asignar o dejar libre, tomar/soltar tareas, XP al instante al nivel personal, ranking, el jefe puede reabrir.
-- [ ] Ranking semanal/mensual (hoy es histórico).
+- [x] Ranking mensual con navegación entre meses.
+- [ ] Ranking: mostrar al ganador del mes anterior o un histórico total (opcional).
 - [x] Avisar al miembro cuando su tarea se aprueba o se devuelve (campana + toast).
 - [ ] Notificaciones en tiempo real (hoy sondeo cada 30 s) y otros tipos (asignación, invitación).
 - [ ] Decidir si las tareas de organización cuentan para misiones diarias y racha.
@@ -363,6 +365,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: Rama `feat/org-ranking-monthly` (sobre `main`): ranking de la organización por mes con flechas, `startOfDayInZone` y `monthBounds`. 274 pruebas pasan, build OK.
 - 2026-11-03: `feat/change-password`, `feat/mobile-layout`, `feat/missions-page`, `feat/edit-profile`, `feat/calendar-drag`, `feat/calendar-drag-org`, `feat/org-join-code` y `feat/dashboard-task-summary` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó el 2026-10-30.
 - 2026-10-30: Rama `feat/dashboard-task-summary` (sobre `feat/org-join-code`): el dashboard muestra un "Resumen de tareas" en dos columnas (En curso | Completadas) con personales y de equipo; TaskList pierde el modo preview; OrgTaskCard acepta `organization` para mostrar su nombre. 270 pruebas pasan, build OK.
 - 2026-10-30: Misma rama `feat/org-join-code`: /organizaciones con Nueva | Unirse en dos columnas, y Miembros con lista | opciones para agregar. 267 pruebas pasan, build OK.

@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/org-tasks";
 import { leaveOrganization, removeMember } from "@/app/actions/organizations";
 import type { OrgRole } from "@/generated/prisma/enums";
+import { parseMonthParam } from "@/lib/calendar";
 import { getCalendarMonth } from "@/lib/data/calendar";
 import { getOrgBoard } from "@/lib/data/org-board";
 import { getOrganizationForMember } from "@/lib/data/organizations";
@@ -456,7 +457,7 @@ describe("membership changes", () => {
 });
 
 describe("getOrgBoard ranking", () => {
-  it("ranks current members by XP earned in the organization", async () => {
+  it("ranks current members by XP earned in the organization this month", async () => {
     const { owner, member, other, organization } = await setup();
     const a = await newTask(organization.id, { assigneeId: member.id, difficulty: "EPIC" });
     const b = await newTask(organization.id, { assigneeId: other.id, difficulty: "EASY" });
@@ -470,12 +471,33 @@ describe("getOrgBoard ranking", () => {
     await submitOrgTask(waiting.id);
 
     const detail = await getOrganizationForMember(organization.slug, owner.id);
-    const { ranking, tasks } = await getOrgBoard(organization.id, detail!.members);
+    const { ranking, tasks } = await getOrgBoard(organization.id, detail!.members, parseMonthParam(undefined));
     expect(ranking.slice(0, 2).map((r) => [r.userId, r.xp, r.completed])).toEqual([
       [member.id, 100, 1],
       [other.id, 20, 2],
     ]);
     expect(ranking).toHaveLength(4);
     expect(tasks.map((t) => t.status)).toEqual(["IN_REVIEW", "COMPLETED", "COMPLETED", "COMPLETED"]);
+  });
+
+  it("only counts tasks approved within the month, in Mexico City time", async () => {
+    const { owner, member, other, organization } = await setup();
+    const lastDay = await newTask(organization.id, { assigneeId: member.id, difficulty: "EPIC" });
+    const firstDay = await newTask(organization.id, { assigneeId: other.id, difficulty: "EASY" });
+    await completeAs(member, lastDay.id, owner);
+    await completeAs(other, firstDay.id, owner);
+    // 23:30 on Sep 30 and 00:30 on Oct 1 in Mexico City (UTC-6).
+    await prisma.orgTask.update({ where: { id: lastDay.id }, data: { completedAt: new Date("2026-10-01T05:30:00Z") } });
+    await prisma.orgTask.update({ where: { id: firstDay.id }, data: { completedAt: new Date("2026-10-01T06:30:00Z") } });
+
+    const detail = await getOrganizationForMember(organization.slug, owner.id);
+    const score = async (year: number, month: number) =>
+      (await getOrgBoard(organization.id, detail!.members, { year, month })).ranking
+        .filter((r) => r.xp > 0)
+        .map((r) => [r.userId, r.xp, r.completed]);
+
+    expect(await score(2026, 9)).toEqual([[member.id, 100, 1]]);
+    expect(await score(2026, 10)).toEqual([[other.id, 10, 1]]);
+    expect(await score(2026, 11)).toEqual([]);
   });
 });

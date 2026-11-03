@@ -13,6 +13,32 @@ export function dayKey(date: Date): string {
   return dayKeyFormatter.format(date);
 }
 
+const partsFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: APP_TIME_ZONE,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+  second: "numeric",
+});
+
+/** How far APP_TIME_ZONE's wall clock is from UTC at that instant, in ms. */
+function zoneOffsetMs(date: Date): number {
+  const parts = Object.fromEntries(partsFormatter.formatToParts(date).map((p) => [p.type, Number(p.value)]));
+  const wall = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return wall - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+/** The instant "YYYY-MM-DD" starts (00:00) in APP_TIME_ZONE. */
+export function startOfDayInZone(key: string): Date {
+  const utcMidnight = Date.parse(`${key}T00:00:00.000Z`);
+  // Second pass corrects the guess when the offset changes that day.
+  const guess = utcMidnight - zoneOffsetMs(new Date(utcMidnight));
+  return new Date(utcMidnight - zoneOffsetMs(new Date(guess)));
+}
+
 /** Due dates are calendar dates stored at 00:00 UTC. */
 export function dueDateFromInput(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);

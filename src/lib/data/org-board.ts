@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { Difficulty, OrgRole, OrgTaskStatus } from "@/generated/prisma/enums";
+import { monthBounds, type YearMonth } from "@/lib/calendar";
 import { dueDateToInput } from "@/lib/dates";
 import type { MemberDTO } from "@/lib/data/organizations";
 import { canManageTasks } from "@/lib/organizations/permissions";
@@ -77,8 +78,9 @@ function toTaskDTO(t: TaskRow): OrgTaskDTO {
   };
 }
 
-/** Tasks of the board plus each current member's XP earned in this organization. */
-export async function getOrgBoard(organizationId: string, members: MemberDTO[]) {
+/** Tasks of the board plus each current member's XP earned in this organization during `month`. */
+export async function getOrgBoard(organizationId: string, members: MemberDTO[], month: YearMonth) {
+  const { start, end } = monthBounds(month);
   const [tasks, totals] = await Promise.all([
     prisma.orgTask.findMany({
       where: { organizationId },
@@ -88,7 +90,12 @@ export async function getOrgBoard(organizationId: string, members: MemberDTO[]) 
     }),
     prisma.orgTask.groupBy({
       by: ["completedById"],
-      where: { organizationId, status: "COMPLETED", completedById: { not: null } },
+      where: {
+        organizationId,
+        status: "COMPLETED",
+        completedById: { not: null },
+        completedAt: { gte: start, lt: end },
+      },
       _sum: { awardedXp: true },
       _count: { _all: true },
     }),

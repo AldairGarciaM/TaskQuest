@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { currentStreak, dayKey, dueDateFromInput, dueDateToInput } from "@/lib/dates";
+import { currentStreak, dayKey, dueDateFromInput, dueDateToInput, startOfDayInZone } from "@/lib/dates";
 
 // 12:00 in Mexico City.
 const NOW = new Date("2026-10-26T18:00:00Z");
@@ -11,6 +11,14 @@ describe("dayKey", () => {
     // 03:00 UTC on the 26th is still the 25th in Mexico City.
     expect(dayKey(at("2026-10-26T03:00:00Z"))).toBe("2026-10-25");
     expect(dayKey(at("2026-10-26T18:00:00Z"))).toBe("2026-10-26");
+  });
+});
+
+describe("startOfDayInZone", () => {
+  it("returns midnight in Mexico City as a UTC instant", () => {
+    expect(startOfDayInZone("2026-10-01").toISOString()).toBe("2026-10-01T06:00:00.000Z");
+    expect(dayKey(startOfDayInZone("2026-03-01"))).toBe("2026-03-01");
+    expect(dayKey(new Date(startOfDayInZone("2026-03-01").getTime() - 1))).toBe("2026-02-28");
   });
 });
 
