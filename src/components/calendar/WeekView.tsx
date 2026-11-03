@@ -9,7 +9,7 @@ import type { CalendarMonth } from "@/lib/data/calendar";
 import { cn } from "@/lib/utils";
 
 import { CalendarSummary } from "./CalendarView";
-import { EntryRow, entryKey, isPending } from "./entries";
+import { EntryRow, entryKey, isPending, TouchDragGhost } from "./entries";
 import { useCalendarTasks } from "./useCalendarTasks";
 
 interface WeekViewProps {
@@ -134,6 +134,7 @@ export default function WeekView({ monday, today, data, userId }: WeekViewProps)
                           onEdit={(task) => calendar.openForm(task)}
                           onDragStart={calendar.startDrag}
                           onDragEnd={calendar.endDrag}
+                          touchSource={calendar.touchSource}
                         />
                       </motion.li>
                     ))}
@@ -146,6 +147,7 @@ export default function WeekView({ monday, today, data, userId }: WeekViewProps)
       </ol>
 
       <TaskFormSheet {...calendar.form} />
+      <TouchDragGhost ghost={calendar.touchGhost} ghostRef={calendar.ghostRef} />
     </section>
   );
 }

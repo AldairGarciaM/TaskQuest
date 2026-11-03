@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleCheck, GripVertical, Pencil, UserRound, Users } from "lucide-react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { DragEvent } from "react";
 
@@ -10,6 +11,7 @@ import type { CalendarMonth, CalendarOrgTask } from "@/lib/data/calendar";
 import { cn } from "@/lib/utils";
 
 import { ownership } from "./ownership";
+import type { TouchGhost, TouchSource } from "./useCalendarTasks";
 
 export type PersonalTask = CalendarMonth["tasks"][number];
 
@@ -35,6 +37,9 @@ export function isMovable(entry: Entry) {
   return entry.kind === "personal" ? isPending(entry) : entry.task.canReschedule;
 }
 
+/** Keeps a long press from selecting text or opening the link preview, so it can pick the task up. */
+export const TOUCH_HOLD_CLASS = "select-none [-webkit-touch-callout:none]";
+
 const ORG_STATUS: Record<CalendarOrgTask["status"], { label: string; className: string }> = {
   PENDING: { label: "Pendiente", className: "bg-slate-800 text-slate-300" },
   IN_REVIEW: { label: "En revisión", className: "bg-amber-500/15 text-amber-300" },
@@ -49,6 +54,7 @@ export function PersonalRow({
   onEdit,
   onDragStart,
   onDragEnd,
+  touch,
 }: {
   task: PersonalTask;
   overdue: boolean;
@@ -57,6 +63,7 @@ export function PersonalRow({
   onEdit: () => void;
   onDragStart: (event: DragEvent) => void;
   onDragEnd: () => void;
+  touch: TouchSource;
 }) {
   const completed = task.status === "COMPLETED";
   const style = DifficultyStyles[task.difficulty];
@@ -66,9 +73,10 @@ export function PersonalRow({
       draggable={!completed}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      {...touch}
       className={cn(
         "flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3 transition-opacity duration-150",
-        !completed && "lg:cursor-grab lg:active:cursor-grabbing",
+        !completed && cn("lg:cursor-grab lg:active:cursor-grabbing", TOUCH_HOLD_CLASS),
         isDragging && "opacity-40",
       )}
     >
@@ -114,6 +122,7 @@ export function OrgRow({
   isDragging,
   onDragStart,
   onDragEnd,
+  touch,
 }: {
   task: OrgTask;
   overdue: boolean;
@@ -121,6 +130,7 @@ export function OrgRow({
   isDragging: boolean;
   onDragStart: (event: DragEvent) => void;
   onDragEnd: () => void;
+  touch: TouchSource;
 }) {
   const status = ORG_STATUS[task.status];
   const completed = task.status === "COMPLETED";
@@ -133,9 +143,10 @@ export function OrgRow({
       draggable={task.canReschedule}
       onDragStart={task.canReschedule ? onDragStart : undefined}
       onDragEnd={onDragEnd}
+      {...touch}
       className={cn(
         "flex items-start gap-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-3 transition-[border-color,opacity] duration-150 hover:border-sky-500/40 focus-visible:ring-2 focus-visible:ring-sky-500/40 focus-visible:outline-none",
-        task.canReschedule && "lg:cursor-grab lg:active:cursor-grabbing",
+        task.canReschedule && cn("lg:cursor-grab lg:active:cursor-grabbing", TOUCH_HOLD_CLASS),
         isDragging && "opacity-40",
       )}
     >
@@ -178,6 +189,7 @@ export function EntryRow({
   onEdit,
   onDragStart,
   onDragEnd,
+  touchSource,
 }: {
   entry: Entry;
   today: string;
@@ -187,6 +199,7 @@ export function EntryRow({
   onEdit: (task: PersonalTask) => void;
   onDragStart: (event: DragEvent, entry: Entry) => void;
   onDragEnd: () => void;
+  touchSource: (entry: Entry) => TouchSource;
 }) {
   const isDragging = draggingKey === entryKey(entry);
   const overdue = entry.task.dueDate < today;
@@ -199,6 +212,7 @@ export function EntryRow({
       onEdit={() => onEdit(entry.task)}
       onDragStart={(event) => onDragStart(event, entry)}
       onDragEnd={onDragEnd}
+      touch={touchSource(entry)}
     />
   ) : (
     <OrgRow
@@ -208,6 +222,26 @@ export function EntryRow({
       isDragging={isDragging}
       onDragStart={(event) => onDragStart(event, entry)}
       onDragEnd={onDragEnd}
+      touch={touchSource(entry)}
     />
+  );
+}
+
+/** The task a finger is carrying (touch drag), above everything and out of the way of hit-testing. */
+export function TouchDragGhost({ ghost, ghostRef }: { ghost: TouchGhost | null; ghostRef: (node: HTMLElement | null) => void }) {
+  if (!ghost) return null;
+  return createPortal(
+    <div
+      ref={ghostRef}
+      aria-hidden
+      style={{ width: Math.min(ghost.width, 280) }}
+      className={cn(
+        "pointer-events-none fixed top-0 left-0 z-[60] truncate rounded-xl border px-3 py-2 text-sm font-medium shadow-2xl shadow-black/50 will-change-transform",
+        ghost.kind === "org" ? "border-sky-500/50 bg-sky-950 text-sky-50" : "border-violet-500/60 bg-slate-900 text-slate-50",
+      )}
+    >
+      {ghost.title}
+    </div>,
+    document.body,
   );
 }
