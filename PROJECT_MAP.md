@@ -1,5 +1,5 @@
 # PROJECT_MAP — TaskQuest
-_Última actualización: 2026-10-29_
+_Última actualización: 2026-11-03_
 
 ## Qué es
 Gestor de tareas personal con gamificación (XP, niveles, misiones diarias, logros, rachas). Proyecto de portafolio.
@@ -363,6 +363,7 @@ Prioridad 4 — estabilidad
 - [ ] Tests e2e de navegador (Playwright) para el flujo de UI.
 
 ## Historial
+- 2026-11-03: `feat/change-password`, `feat/mobile-layout`, `feat/missions-page`, `feat/edit-profile`, `feat/calendar-drag`, `feat/calendar-drag-org`, `feat/org-join-code` y `feat/dashboard-task-summary` fusionadas a `main` (fast-forward) con permiso del usuario, que las probó el 2026-10-30.
 - 2026-10-30: Rama `feat/dashboard-task-summary` (sobre `feat/org-join-code`): el dashboard muestra un "Resumen de tareas" en dos columnas (En curso | Completadas) con personales y de equipo; TaskList pierde el modo preview; OrgTaskCard acepta `organization` para mostrar su nombre. 270 pruebas pasan, build OK.
 - 2026-10-30: Misma rama `feat/org-join-code`: /organizaciones con Nueva | Unirse en dos columnas, y Miembros con lista | opciones para agregar. 267 pruebas pasan, build OK.
 - 2026-10-30: Rama `feat/org-join-code` (sobre `feat/calendar-drag-org`): unirse a organizaciones con código, panel del código en Miembros, migración `org_join_code`. 267 pruebas pasan, build OK.
